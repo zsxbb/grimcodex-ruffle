@@ -891,8 +891,12 @@ namespace Grimoire.UI
             this.cbCells.Name = "cbCells";
             this.cbCells.Size = new System.Drawing.Size(76, 21);
             this.cbCells.TabIndex = 18;
+            this.cbCells.TabStop = false;
             this.cbCells.SelectedIndexChanged += new System.EventHandler(this.cbCells_SelectedIndexChanged);
             this.cbCells.Click += new System.EventHandler(this.cbCells_Click);
+            this.cbCells.KeyDown += new System.Windows.Forms.KeyEventHandler(this.ToolbarCombo_BlockKeyboard);
+            this.cbCells.KeyPress += new System.Windows.Forms.KeyPressEventHandler(this.ToolbarCombo_BlockKeyPress);
+            this.cbCells.DropDownClosed += new System.EventHandler(this.ToolbarCombo_DropDownClosed);
             // 
             // cbPads
             // 
@@ -912,7 +916,11 @@ namespace Grimoire.UI
             this.cbPads.Name = "cbPads";
             this.cbPads.Size = new System.Drawing.Size(75, 21);
             this.cbPads.TabIndex = 17;
+            this.cbPads.TabStop = false;
             this.cbPads.SelectedIndexChanged += new System.EventHandler(this.cbPads_SelectedIndexChanged);
+            this.cbPads.KeyDown += new System.Windows.Forms.KeyEventHandler(this.ToolbarCombo_BlockKeyboard);
+            this.cbPads.KeyPress += new System.Windows.Forms.KeyPressEventHandler(this.ToolbarCombo_BlockKeyPress);
+            this.cbPads.DropDownClosed += new System.EventHandler(this.ToolbarCombo_DropDownClosed);
             // 
             // darkMenuStrip1
             // 
@@ -1847,6 +1855,37 @@ namespace Grimoire.UI
             Player.Bank.Show();
         }
 
+        private void ToolbarCombo_BlockKeyboard(object sender, KeyEventArgs e)
+        {
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            ReturnFocusToGame();
+        }
+
+        private void ToolbarCombo_BlockKeyPress(object sender, KeyPressEventArgs e)
+        {
+            e.Handled = true;
+            ReturnFocusToGame();
+        }
+
+        private void ToolbarCombo_DropDownClosed(object sender, EventArgs e)
+        {
+            BeginInvoke((MethodInvoker)ReturnFocusToGame);
+        }
+
+        private void ReturnFocusToGame()
+        {
+            try
+            {
+                this.ActiveControl = null;
+                if (gameContainer != null && gameContainer.Controls.Count > 0)
+                    gameContainer.Controls[0].Focus();
+                else
+                    gameContainer?.Focus();
+            }
+            catch { }
+        }
+
         private void cbCells_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (!Player.IsLoggedIn) return;
@@ -1856,15 +1895,18 @@ namespace Grimoire.UI
                 string pad = (string)this.cbPads.SelectedItem;
                 Player.MoveToCell(cell, pad ?? "Spawn");
             }
+            ReturnFocusToGame();
         }
         private void cbPads_SelectedIndexChanged(object sender, EventArgs e)
         {
+            if (!Player.IsLoggedIn) return;
             string pad = (string)cbPads.SelectedItem;
             if (pad != null)
             {
                 string cell = (string)this.cbCells.SelectedItem;
                 Player.MoveToCell(cell ?? Player.Cell, pad);
             }
+            ReturnFocusToGame();
         }
 
         private List<Skill> getSkillPreset()
