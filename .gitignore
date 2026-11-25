@@ -1,0 +1,50 @@
+# GrimCodex Ruffle — .gitignore
+
+## Unified build & distribution output
+/dist/
+
+## Rust engine build artifacts & temp
+/engine/target/
+/engine/pgo-extracted/
+**/target/
+**/*.rs.bk
+
+## .NET / Visual Studio (grim/)
+grim/[Bb]in/
+grim/[Oo]bj/
+grim/packages/*
+!grim/packages/repositories.config
+grim/FodyWeavers.xsd
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.pdb
+
+## Flash / Ruffle dev & temp files
+*.swd
+RECOVER_*.fla
+.flash_players.toml
+
+## Upstream Ruffle SWF test fixtures (~165 MB, 23k files; not needed to build desktop engine)
+/engine/ruffle/tests/tests/swfs/
+
+## Node.js (signaling server)
+grim/signaling-server/node_modules/
+grim/signaling-server/npm-debug.log*
+
+## Scratch, logs & backups
+scratch/
+*.tmp
+*.log
+*.bak
+*.backup
+
+## Editors & OS junk
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
