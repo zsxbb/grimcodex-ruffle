@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.IO.Compression;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -38,9 +40,52 @@ namespace Grimoire.UI
             await StartDownloadAsync(_cts.Token);
         }
 
+        private async Task DownloadFileWithProgressAsync(HttpClient client, string url, string destinationPath, string label, CancellationToken cancellationToken)
+        {
+            using (HttpResponseMessage response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+            {
+                response.EnsureSuccessStatusCode();
+
+                long? totalBytes = response.Content.Headers.ContentLength;
+
+                using (Stream contentStream = await response.Content.ReadAsStreamAsync())
+                using (FileStream fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
+                {
+                    byte[] buffer = new byte[8192];
+                    long totalRead = 0;
+                    int bytesRead;
+
+                    while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+                    {
+                        await fileStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
+                        totalRead += bytesRead;
+
+                        if (totalBytes.HasValue && totalBytes.Value > 0)
+                        {
+                            int progressPct = (int)((double)totalRead / totalBytes.Value * 100);
+                            progressBar.Value = Math.Max(0, Math.Min(100, progressPct));
+
+                            double readMb = totalRead / (1024.0 * 1024.0);
+                            double totalMb = totalBytes.Value / (1024.0 * 1024.0);
+                            lblStatus.Text = $"{label}: {readMb:F1} MB / {totalMb:F1} MB ({progressPct}%)...";
+                        }
+                        else
+                        {
+                            double readMb = totalRead / (1024.0 * 1024.0);
+                            lblStatus.Text = $"{label}: {readMb:F1} MB...";
+                        }
+                    }
+                }
+            }
+        }
+
         private async Task StartDownloadAsync(CancellationToken cancellationToken)
         {
-            string targetPath = Path.Combine(Application.StartupPath, Path.GetFileName(Application.ExecutablePath) + ".new");
+            string targetExePath = Path.Combine(Application.StartupPath, Path.GetFileName(Application.ExecutablePath) + ".new");
+            string runtimeDir = Path.Combine(Application.StartupPath, "runtime");
+            string engineZipTemp = Path.Combine(runtimeDir, "grimcodex-engine.zip.tmp");
+            string targetEnginePath = Path.Combine(runtimeDir, "grimcodex-engine.exe.new");
+            bool updatedEngine = false;
 
             try
             {
@@ -49,40 +94,44 @@ namespace Grimoire.UI
                     client.Timeout = TimeSpan.FromMinutes(10);
                     client.DefaultRequestHeaders.Add("User-Agent", "GrimCodex-Ruffle-Client");
 
-                    using (HttpResponseMessage response = await client.GetAsync(_manifest.AppDownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+                    // 1. Download main GrimCodex Ruffle executable
+                    await DownloadFileWithProgressAsync(client, _manifest.AppDownloadUrl, targetExePath, "Downloading app", cancellationToken);
+
+                    // 2. Download & extract updated Ruffle engine only when missing or SHA-256 changed
+                    if (CodexBankManager.Instance.NeedsEngineUpdate(_manifest))
                     {
-                        response.EnsureSuccessStatusCode();
+                        Directory.CreateDirectory(runtimeDir);
+                        progressBar.Value = 0;
+                        await DownloadFileWithProgressAsync(client, _manifest.EngineDownloadUrl, engineZipTemp, "Downloading engine", cancellationToken);
 
-                        long? totalBytes = response.Content.Headers.ContentLength;
-
-                        using (Stream contentStream = await response.Content.ReadAsStreamAsync())
-                        using (FileStream fileStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
+                        lblStatus.Text = "Extracting Ruffle engine...";
+                        await Task.Run(() =>
                         {
-                            byte[] buffer = new byte[8192];
-                            long totalRead = 0;
-                            int bytesRead;
-
-                            while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+                            using (FileStream zipStream = new FileStream(engineZipTemp, FileMode.Open, FileAccess.Read, FileShare.Read))
+                            using (ZipArchive archive = new ZipArchive(zipStream, ZipArchiveMode.Read))
                             {
-                                await fileStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
-                                totalRead += bytesRead;
+                                ZipArchiveEntry entry = archive.Entries.FirstOrDefault(e =>
+                                    e.Name.Equals("grimcodex-engine.exe", StringComparison.OrdinalIgnoreCase));
+                                if (entry == null)
+                                    throw new InvalidDataException("grimcodex-engine.exe not found inside engine archive.");
 
-                                if (totalBytes.HasValue && totalBytes.Value > 0)
+                                using (Stream entryStream = entry.Open())
+                                using (FileStream outStream = new FileStream(targetEnginePath, FileMode.Create, FileAccess.Write, FileShare.None))
                                 {
-                                    int progressPct = (int)((double)totalRead / totalBytes.Value * 100);
-                                    progressBar.Value = Math.Max(0, Math.Min(100, progressPct));
-
-                                    double readMb = totalRead / (1024.0 * 1024.0);
-                                    double totalMb = totalBytes.Value / (1024.0 * 1024.0);
-                                    lblStatus.Text = $"Downloading: {readMb:F1} MB / {totalMb:F1} MB ({progressPct}%)...";
-                                }
-                                else
-                                {
-                                    double readMb = totalRead / (1024.0 * 1024.0);
-                                    lblStatus.Text = $"Downloading: {readMb:F1} MB...";
+                                    entryStream.CopyTo(outStream);
                                 }
                             }
+                        }, cancellationToken);
+
+                        TryDeleteFile(engineZipTemp);
+
+                        if (!string.IsNullOrWhiteSpace(_manifest.EngineSha256) &&
+                            !CodexBankManager.Instance.VerifyHash(targetEnginePath, _manifest.EngineSha256.Trim()))
+                        {
+                            throw new InvalidDataException("Engine SHA-256 verification failed.");
                         }
+
+                        updatedEngine = true;
                     }
                 }
 
@@ -94,17 +143,21 @@ namespace Grimoire.UI
                 await Task.Delay(1500);
 
                 // Apply update and restart
-                CodexBankManager.ApplyUpdateAndRestart(targetPath);
+                CodexBankManager.ApplyUpdateAndRestart(targetExePath, updatedEngine ? targetEnginePath : null);
             }
             catch (OperationCanceledException)
             {
                 lblStatus.Text = "Update cancelled.";
-                TryDeleteFile(targetPath);
+                TryDeleteFile(targetExePath);
+                TryDeleteFile(engineZipTemp);
+                TryDeleteFile(targetEnginePath);
                 Close();
             }
             catch (Exception ex)
             {
-                TryDeleteFile(targetPath);
+                TryDeleteFile(targetExePath);
+                TryDeleteFile(engineZipTemp);
+                TryDeleteFile(targetEnginePath);
                 _isUpdating = false;
                 MessageBox.Show($"Update failed: {ex.Message}", "Update Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Close();

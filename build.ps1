@@ -4,6 +4,7 @@ param(
     [string]$Version = "",
     [switch]$SyncReleaseDate,
     [switch]$UsePgo,
+    [switch]$PackageRelease,
     [switch]$SkipEngine,
     [switch]$SkipApp
 )
@@ -169,6 +170,59 @@ foreach ($f in $appFiles) {
 }
 Copy-Item -Force (Join-Path $grimRelease 'Loader\*') (Join-Path $distDir 'Loader') -Recurse -ErrorAction SilentlyContinue
 Copy-Item -Force (Join-Path $grimRelease 'Resources\*') (Join-Path $distDir 'Resources') -Recurse -ErrorAction SilentlyContinue
+
+# Bundle CodexBank bot scripts into dist\Bots\CodexBank\ (excluding manifest.json)
+$codexBankSrc = Join-Path $repoRoot 'grim\CodexBank'
+$codexBankDest = Join-Path $distDir 'Bots\CodexBank'
+if (Test-Path $codexBankSrc) {
+    if (Test-Path $codexBankDest) { Remove-Item -Recurse -Force $codexBankDest }
+    New-Item -ItemType Directory -Force $codexBankDest | Out-Null
+    Get-ChildItem -Path $codexBankSrc -Force | Where-Object { $_.Name -ne 'manifest.json' } | ForEach-Object {
+        Copy-Item -Path $_.FullName -Destination $codexBankDest -Recurse -Force
+    }
+}
+
+# 4. Optional: package GitHub Release artifacts (1-folder zip + standalone exe + engine zip)
+if ($PackageRelease) {
+    $outDir = Join-Path $repoRoot 'release-artifacts'
+    $stageRoot = Join-Path $outDir '_stage'
+    $stageAppDir = Join-Path $stageRoot 'GrimCodex Ruffle'
+    if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
+    New-Item -ItemType Directory -Force $stageAppDir | Out-Null
+
+    Write-Host "=== Packaging release artifacts in $outDir ==="
+    foreach ($f in $appFiles) {
+        $src = Join-Path $distDir $f
+        if (Test-Path $src) { Copy-Item -Force $src (Join-Path $stageAppDir $f) }
+    }
+    foreach ($dirName in @('Loader', 'Resources', 'runtime')) {
+        $srcDir = Join-Path $distDir $dirName
+        if (Test-Path $srcDir) { Copy-Item -Path $srcDir -Destination (Join-Path $stageAppDir $dirName) -Recurse -Force }
+    }
+    if (Test-Path $codexBankDest) {
+        New-Item -ItemType Directory -Force (Join-Path $stageAppDir 'Bots') | Out-Null
+        Copy-Item -Path $codexBankDest -Destination (Join-Path $stageAppDir 'Bots\CodexBank') -Recurse -Force
+    }
+
+    $fullZip = Join-Path $outDir "GrimCodex-Ruffle-v$cleanVer-win64.zip"
+    Compress-Archive -Path $stageAppDir -DestinationPath $fullZip -CompressionLevel Optimal -Force
+
+    $standaloneExe = Join-Path $outDir 'GrimCodex.Ruffle.exe'
+    Copy-Item -Force (Join-Path $distDir 'GrimCodex Ruffle.exe') $standaloneExe
+
+    $engineExe = Join-Path $distRuntime 'grimcodex-engine.exe'
+    $engineZip = Join-Path $outDir 'grimcodex-engine.zip'
+    Compress-Archive -Path $engineExe -DestinationPath $engineZip -CompressionLevel Optimal -Force
+
+    $engineHash = (Get-FileHash -Algorithm SHA256 -Path $engineExe).Hash
+    Set-Content -Path (Join-Path $outDir 'engine-sha256.txt') -Value $engineHash -NoNewline -Encoding ASCII
+
+    Remove-Item -Recurse -Force $stageRoot
+    Write-Host "Packaged:"
+    Write-Host "  - $fullZip"
+    Write-Host "  - $standaloneExe"
+    Write-Host "  - $engineZip (SHA256: $engineHash)"
+}
 
 Write-Host ""
 Write-Host "Build complete (v$cleanVer)! Run:"

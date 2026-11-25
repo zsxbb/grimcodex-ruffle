@@ -1,0 +1,143 @@
+name: Build and Release GrimCodex Ruffle
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (optional, defaults to VERSION file)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Publish Release (win64)
+    runs-on: windows-latest
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}\engine\target
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version & Rust toolchain
+        id: meta
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $ver = "${{ github.ref_name }}".TrimStart('v', 'V')
+          } elseif (-not [string]::IsNullOrWhiteSpace("${{ inputs.version }}")) {
+            $ver = "${{ inputs.version }}".Trim().TrimStart('v', 'V')
+          } else {
+            $ver = (Get-Content "VERSION" -Raw).Trim().TrimStart('v', 'V')
+          }
+          $rustVer = (Get-Content "engine/RUST_VERSION" -Raw).Trim()
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "tag=v$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "rust_version=$rustVer" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Target Version: v$ver | Rust Toolchain: $rustVer"
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.meta.outputs.rust_version }}
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine/ruffle
+          shared-key: grimcodex-engine-dist
+
+      - name: Setup Temurin JDK 21 (for playerglobal)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet Packages
+        run: nuget restore "grim\Project Grimlite.sln"
+
+      - name: Build GrimCodex Ruffle (PGO + dist) & Package Release
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File build.ps1 `
+            -Profile dist `
+            -UsePgo `
+            -Version "${{ steps.meta.outputs.version }}" `
+            -SyncReleaseDate `
+            -PackageRelease
+
+      - name: Verify release artifacts
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.meta.outputs.version }}"
+          $required = @(
+            "release-artifacts\GrimCodex-Ruffle-v$ver-win64.zip",
+            "release-artifacts\GrimCodex.Ruffle.exe",
+            "release-artifacts\grimcodex-engine.zip",
+            "release-artifacts\engine-sha256.txt"
+          )
+          foreach ($f in $required) {
+            if (-not (Test-Path $f)) { throw "Missing artifact: $f" }
+            $item = Get-Item $f
+            Write-Host ("OK: {0} ({1:F2} MB)" -f $item.Name, ($item.Length / 1MB))
+          }
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: GrimCodex Ruffle ${{ steps.meta.outputs.tag }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: |
+            release-artifacts/GrimCodex-Ruffle-v${{ steps.meta.outputs.version }}-win64.zip
+            release-artifacts/GrimCodex.Ruffle.exe
+            release-artifacts/grimcodex-engine.zip
+
+      - name: Sync manifest.json & VERSION to main
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.meta.outputs.version }}"
+          $engineHash = (Get-Content "release-artifacts\engine-sha256.txt" -Raw).Trim()
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+          [System.IO.File]::WriteAllText((Join-Path $PWD "VERSION"), "$ver`n", $utf8NoBom)
+
+          $manifestPath = Join-Path $PWD "grim\CodexBank\manifest.json"
+          $manifest = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+          $manifest.app_version = $ver
+          $manifest.engine_sha256 = $engineHash
+          $manifest.changelog = "GrimCodex Ruffle v$ver"
+          $json = $manifest | ConvertTo-Json -Depth 10
+          [System.IO.File]::WriteAllText($manifestPath, $json, $utf8NoBom)
+
+          git add VERSION grim/CodexBank/manifest.json
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "chore(release): sync manifest & VERSION to v$ver [skip ci]"
+            git push origin main
+          } else {
+            Write-Host "manifest.json and VERSION already up to date."
+          }
+

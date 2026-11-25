@@ -2,6 +2,8 @@
     "app_version":  "1.0.0",
     "app_download_url":  "https://github.com/zsxbb/grimcodex-ruffle/releases/latest/download/GrimCodex.Ruffle.exe",
     "app_release_url":  "https://github.com/zsxbb/grimcodex-ruffle/releases/latest",
+    "engine_download_url":  "https://github.com/zsxbb/grimcodex-ruffle/releases/latest/download/grimcodex-engine.zip",
+    "engine_sha256":  "",
     "changelog":  "GrimCodex Ruffle v1.0.0 - Initial Ruffle release",
     "scripts":  [
                     {

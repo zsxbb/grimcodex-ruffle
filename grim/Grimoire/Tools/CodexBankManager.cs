@@ -74,6 +74,12 @@ namespace Grimoire.Tools
         [JsonProperty("app_release_url")]
         public string AppReleaseUrl { get; set; } = "https://github.com/zsxbb/grimcodex-ruffle/releases/latest";
 
+        [JsonProperty("engine_download_url")]
+        public string EngineDownloadUrl { get; set; } = "https://github.com/zsxbb/grimcodex-ruffle/releases/latest/download/grimcodex-engine.zip";
+
+        [JsonProperty("engine_sha256")]
+        public string EngineSha256 { get; set; } = "";
+
         [JsonProperty("changelog")]
         public string Changelog { get; set; } = "";
 
@@ -99,6 +105,22 @@ namespace Grimoire.Tools
         public const string CURRENT_APP_VERSION = "1.0.0";
 
         public string LocalBankDirectory => Path.Combine(Application.StartupPath, "Bots", "CodexBank");
+
+        public string LocalEnginePath => Path.Combine(Application.StartupPath, "runtime", "grimcodex-engine.exe");
+
+        public bool NeedsEngineUpdate(CodexManifest manifest)
+        {
+            if (manifest == null || string.IsNullOrWhiteSpace(manifest.EngineDownloadUrl))
+                return false;
+
+            if (!File.Exists(LocalEnginePath))
+                return true;
+
+            if (!string.IsNullOrWhiteSpace(manifest.EngineSha256))
+                return !VerifyHash(LocalEnginePath, manifest.EngineSha256.Trim());
+
+            return false;
+        }
 
         public CodexManifest CachedManifest { get; private set; }
 
@@ -257,7 +279,7 @@ namespace Grimoire.Tools
             }
         }
 
-        public static void ApplyUpdateAndRestart(string newExePath)
+        public static void ApplyUpdateAndRestart(string newExePath, string newEnginePath = null)
         {
             try
             {
@@ -266,13 +288,35 @@ namespace Grimoire.Tools
                 string exeName = Path.GetFileName(currentExePath);
                 string newExeName = Path.GetFileName(newExePath);
 
+                string engineMoveBlock = "";
+                if (!string.IsNullOrEmpty(newEnginePath) && File.Exists(newEnginePath))
+                {
+                    engineMoveBlock =
+                        "if not exist \"runtime\" mkdir \"runtime\"\r\n" +
+                        ":retry_engine\r\n" +
+                        "set /a ecount+=1\r\n" +
+                        "if %ecount% gtr 20 goto launch\r\n" +
+                        "move /Y \"runtime\\grimcodex-engine.exe.new\" \"runtime\\grimcodex-engine.exe\" >nul 2>&1\r\n" +
+                        "if exist \"runtime\\grimcodex-engine.exe.new\" (\r\n" +
+                        "    ping 127.0.0.1 -n 2 > nul\r\n" +
+                        "    goto retry_engine\r\n" +
+                        ")\r\n";
+                }
+
                 string batPath = Path.Combine(currentExeDir, "update_apply.bat");
                 string batContent =
                     "@echo off\r\n" +
+                    "set count=0\r\n" +
+                    "set ecount=0\r\n" +
                     ":retry\r\n" +
+                    "set /a count+=1\r\n" +
                     "ping 127.0.0.1 -n 2 > nul\r\n" +
                     $"move /Y \"{newExeName}\" \"{exeName}\" >nul 2>&1\r\n" +
-                    $"if exist \"{newExeName}\" goto retry\r\n" +
+                    $"if exist \"{newExeName}\" (\r\n" +
+                    "    if %count% lss 20 goto retry\r\n" +
+                    ")\r\n" +
+                    engineMoveBlock +
+                    ":launch\r\n" +
                     $"start \"\" \"{exeName}\"\r\n" +
                     "(goto) 2>nul & del \"%~f0\"\r\n";
 
