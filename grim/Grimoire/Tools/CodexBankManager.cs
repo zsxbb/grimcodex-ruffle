@@ -102,7 +102,7 @@ namespace Grimoire.Tools
 
         public const string MANIFEST_URL = "https://raw.githubusercontent.com/zsxbb/grimcodex-ruffle/main/grim/CodexBank/manifest.json";
         public const string RAW_BASE_URL = "https://raw.githubusercontent.com/zsxbb/grimcodex-ruffle/main/grim/CodexBank/";
-        public const string CURRENT_APP_VERSION = "1.0.0";
+        public const string CURRENT_APP_VERSION = "1.0.1";
 
         public string LocalBankDirectory => Path.Combine(Application.StartupPath, "Bots", "CodexBank");
 

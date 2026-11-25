@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use winit::window::Window;
 
-pub const VERSION: &str = "1.0.0";
+pub const VERSION: &str = "1.0.1";
 
 // --- Window title -------------------------------------------------------------------------
 
