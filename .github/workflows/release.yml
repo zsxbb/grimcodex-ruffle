@@ -132,7 +132,9 @@ jobs:
           $manifest = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
           $manifest.app_version = $ver
           $manifest.engine_sha256 = $engineHash
-          $manifest.changelog = "GrimCodex Ruffle v$ver"
+          if ([string]::IsNullOrWhiteSpace($manifest.changelog) -or $manifest.changelog -notmatch [regex]::Escape("v$ver")) {
+            $manifest.changelog = "GrimCodex Ruffle v$ver"
+          }
           $json = $manifest | ConvertTo-Json -Depth 10
           [System.IO.File]::WriteAllText($manifestPath, $json, $utf8NoBom)
 
