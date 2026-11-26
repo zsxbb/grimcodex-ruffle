@@ -265,6 +265,7 @@ fn grimcodex_args() -> Vec<std::ffi::OsString> {
     // (`grimcodex-edges.txt`) is not read any more.
     ruffle_render::tessellator::set_flash_aa(!grimcodex::exe_flag("msaa"));
     grimcodex::load_show_fps();
+    grimcodex::load_muted();
     grimcodex::load_pacing();
     grimcodex::load_performance();
     grimcodex::load_memory_limit();

@@ -17,6 +17,7 @@ namespace Grimoire.Tools.FlashBridge
         void LoadSwf(string swfPath, Control hostContainer);
         string CallFunctionXml(string xmlRequest);
         string CallFunction(string functionName, params object[] args);
+        void CallFunctionFireAndForget(string functionName, params object[] args);
         void SetQuality(string quality);
         void Resize(int width, int height);
     }

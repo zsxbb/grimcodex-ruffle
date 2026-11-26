@@ -1296,6 +1296,18 @@ impl MainWindow {
                 grimcodex::set_show_fps(on);
                 self.gui.window().request_redraw();
             }
+            Setting::Mute(on) => {
+                grimcodex::set_muted(on);
+                let vol = if on {
+                    0.0
+                } else {
+                    self.preferences.preferred_volume()
+                };
+                if let Some(mut player) = self.player.get() {
+                    player.set_volume(vol);
+                }
+                tracing::info!("Audio {}", if on { "muted" } else { "unmuted" });
+            }
             Setting::MemoryLimit(mb) => {
                 grimcodex::set_memory_limit_mb(mb);
                 if mb == 0 {
@@ -1960,21 +1972,10 @@ impl MainWindow {
     }
 
     fn check_redraw(&self) {
-        // AQW build: nothing is drawn while the window is minimized (see the redraw handler),
-        // so nothing is asked for either. A redraw that was asked for came back at once,
-        // was skipped, left the frame "not drawn yet", and was asked for again on the next
-        // turn of the loop: a minimized player kept one processor core busy (890-950 ms a
-        // second of the main thread, with or without frame interpolation). When the window
-        // is back, the next game frame asks.
         if self.minimized || self.occluded {
             return;
         }
         let player = self.player.get();
-        // AQW build: like Flash Player's normal pacing, only draw once a new SWF frame has run.
-        // AQW calls `updateAfterEvent()` from timers and hovers change between frames, which
-        // made Ruffle redraw the same frame 2-9x per frame interval; in combat those extra
-        // draws cost the main thread the time the next frame needed. A paused movie still
-        // redraws on demand.
         let player_needs_render = player
             .map(|p| {
                 p.needs_render()
@@ -2359,7 +2360,7 @@ impl ApplicationHandler<RuffleEvent> for App {
                         } else {
                             (false, ruffle_core::external::Value::Null)
                         };
-                        if let Some(ipc) = &main_window.grim_ipc {
+                        if let (Some(id), Some(ipc)) = (id, &main_window.grim_ipc) {
                             ipc.send_call_result(id, ok, &value);
                         }
                     }

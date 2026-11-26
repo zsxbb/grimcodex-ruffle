@@ -162,7 +162,8 @@ $appFiles = @(
     'GrimCodex Ruffle.exe',
     'GrimCodex Ruffle.exe.config',
     'ClientConfig.cfg',
-    'config.cfg'
+    'config.cfg',
+    'PinnedQuests.json'
 )
 foreach ($f in $appFiles) {
     $src = Join-Path $grimRelease $f

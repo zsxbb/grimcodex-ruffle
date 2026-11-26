@@ -237,6 +237,11 @@ impl RuffleGui {
         self.dialogs
             .recreate_open_dialog(opt, Some(content_descriptor), self.event_loop.clone());
 
-        player.set_volume(self.dialogs.volume_controls.get_volume());
+        let vol = if crate::grimcodex::muted() {
+            0.0
+        } else {
+            self.dialogs.volume_controls.get_volume()
+        };
+        player.set_volume(vol);
     }
 }

@@ -59,6 +59,48 @@ namespace Grimoire.UI
             }
         }
 
+        private static List<PinnedQuest> CreateDefaultPinnedQuests()
+        {
+            return new List<PinnedQuest>
+            {
+                new PinnedQuest { Id = 2330, Name = "Crafted: Scrolls of Enrage" },
+                new PinnedQuest { Id = 9305, Name = "Templeshrine Mid Daily" },
+                new PinnedQuest { Id = 9303, Name = "Templeshrine Left Daily" },
+                new PinnedQuest { Id = 9304, Name = "Templeshrine Right Daily" },
+                new PinnedQuest { Id = 8245, Name = "Ultra Tyndarius Daily" },
+                new PinnedQuest { Id = 8154, Name = "Ultra Engineer Daily" },
+                new PinnedQuest { Id = 8153, Name = "Ultra Warden Daily" },
+                new PinnedQuest { Id = 8152, Name = "Ultra Ezrajal Daily" },
+                new PinnedQuest { Id = 8216, Name = "Ultra Kala Daily" },
+                new PinnedQuest { Id = 8262, Name = "Ultra Iara Daily" },
+                new PinnedQuest { Id = 9350, Name = "Kathooldepth: Frenzy Feast Daily" },
+                new PinnedQuest { Id = 9803, Name = "Astralshrine: Asterism Toll Daily" },
+                new PinnedQuest { Id = 1677, Name = "Exercise 5: God of Depths Daily" },
+                new PinnedQuest { Id = 1678, Name = "Exercise 6: Dage Dark Lord Daily" },
+                new PinnedQuest { Id = 8653, Name = "Encroaching Daily" },
+                new PinnedQuest { Id = 9091, Name = "Wrong Turn at Voidbqq Daily" },
+                new PinnedQuest { Id = 9173, Name = "Ultra Speaker Weekly" },
+                new PinnedQuest { Id = 8746, Name = "Ultra Darkon Weekly" },
+                new PinnedQuest { Id = 8300, Name = "Champion Drakath Weekly" },
+                new PinnedQuest { Id = 10301, Name = "Ultra Gramiel Weekly" },
+                new PinnedQuest { Id = 8397, Name = "Ultra Drago Weekly" },
+                new PinnedQuest { Id = 8547, Name = "Ultra Dage Weekly" },
+                new PinnedQuest { Id = 8692, Name = "Ultra Nulgath Weekly" }
+            };
+        }
+
+        private static bool IsLegacyPlaceholderName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return true;
+            return name.StartsWith("Daily / Ultra Quest ", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("Daily Quest ", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("Ultra Drakath Weekly", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("Ultra Engineer Weekly", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("Ultra Warden Weekly", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("Ultra Ezrajal Weekly", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("Ultra Boss Weekly", StringComparison.OrdinalIgnoreCase);
+        }
+
         private void LoadPinnedQuests()
         {
             try
@@ -67,41 +109,47 @@ namespace Grimoire.UI
                 {
                     string json = File.ReadAllText(filePath);
                     pinnedQuests = JsonConvert.DeserializeObject<List<PinnedQuest>>(json) ?? new List<PinnedQuest>();
-                    if (!pinnedQuests.Any(q => q.Id == 2330))
+                    bool modified = false;
+
+                    // Migrate legacy placeholder default file to the new 23-quest template while keeping user additions
+                    if (pinnedQuests.Any(q => IsLegacyPlaceholderName(q.Name)))
+                    {
+                        List<PinnedQuest> defaults = CreateDefaultPinnedQuests();
+                        Dictionary<int, PinnedQuest> existingById = pinnedQuests
+                            .GroupBy(q => q.Id)
+                            .ToDictionary(g => g.Key, g => g.First());
+
+                        List<PinnedQuest> merged = new List<PinnedQuest>(defaults);
+                        foreach (var custom in pinnedQuests)
+                        {
+                            if (!merged.Any(d => d.Id == custom.Id))
+                            {
+                                merged.Add(custom);
+                            }
+                        }
+                        pinnedQuests = merged;
+                        modified = true;
+                    }
+                    else if (!pinnedQuests.Any(q => q.Id == 2330))
                     {
                         pinnedQuests.Insert(0, new PinnedQuest { Id = 2330, Name = "Crafted: Scrolls of Enrage" });
+                        modified = true;
+                    }
+
+                    if (modified)
+                    {
                         SavePinnedQuests();
                     }
                 }
                 else
                 {
-                    // Add default quest list (like Ultrabosses & Daily) if no config exists
-                    pinnedQuests = new List<PinnedQuest>
-                    {
-                        new PinnedQuest { Id = 2330, Name = "Crafted: Scrolls of Enrage" },
-                        new PinnedQuest { Id = 8152, Name = "Daily / Ultra Quest 1" },
-                        new PinnedQuest { Id = 8153, Name = "Daily / Ultra Quest 2" },
-                        new PinnedQuest { Id = 8154, Name = "Daily / Ultra Quest 3" },
-                        new PinnedQuest { Id = 9350, Name = "Daily / Ultra Quest 4" },
-                        new PinnedQuest { Id = 9803, Name = "Daily / Ultra Quest 5" },
-                        new PinnedQuest { Id = 1677, Name = "Daily Quest A" },
-                        new PinnedQuest { Id = 1678, Name = "Daily Quest B" },
-                        new PinnedQuest { Id = 8653, Name = "Daily Quest C" },
-                        new PinnedQuest { Id = 9091, Name = "Daily Quest D" },
-                        new PinnedQuest { Id = 8300, Name = "Ultra Drakath Weekly" },
-                        new PinnedQuest { Id = 8397, Name = "Ultra Engineer Weekly" },
-                        new PinnedQuest { Id = 8547, Name = "Ultra Warden Weekly" },
-                        new PinnedQuest { Id = 8692, Name = "Ultra Ezrajal Weekly" },
-                        new PinnedQuest { Id = 8746, Name = "Ultra Dage Weekly" },
-                        new PinnedQuest { Id = 9173, Name = "Ultra Nulgath Weekly" },
-                        new PinnedQuest { Id = 10301, Name = "Ultra Boss Weekly" }
-                    };
+                    pinnedQuests = CreateDefaultPinnedQuests();
                     SavePinnedQuests();
                 }
             }
             catch
             {
-                pinnedQuests = new List<PinnedQuest>();
+                pinnedQuests = CreateDefaultPinnedQuests();
             }
 
             UpdateList();

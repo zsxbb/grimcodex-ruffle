@@ -105,7 +105,8 @@ namespace Grimoire.Tools
 
         public static void SetGameObject(string path, object value)
         {
-            Call("setGameObject", path, value);
+            if (Bridge != null)
+                Bridge.CallFunctionFireAndForget("setGameObject", path, value);
         }
 
         public static string Call2(string function, params object[] args)
@@ -168,7 +169,10 @@ namespace Grimoire.Tools
 
         public static void Call(string function, params string[] args)
         {
-            Call<string>(function, args);
+            if (Bridge == null || string.IsNullOrEmpty(function))
+                return;
+            object[] objArgs = args == null ? new object[0] : args.Cast<object>().ToArray();
+            Bridge.CallFunctionFireAndForget(function, objArgs);
         }
 
         private static string BuildRequest(string method, params string[] args)

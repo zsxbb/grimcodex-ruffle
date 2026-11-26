@@ -13,7 +13,7 @@ use winit::event_loop::EventLoopProxy;
 
 pub enum GrimIpcCommand {
     Call {
-        id: i64,
+        id: Option<i64>,
         name: String,
         args: Vec<ExternalValue>,
     },
@@ -205,7 +205,15 @@ fn handle_host_message(
 
     match msg_type {
         "call" => {
-            let id = msg.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+            let no_reply = msg
+                .get("no_reply")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let id = if no_reply {
+                None
+            } else {
+                Some(msg.get("id").and_then(|v| v.as_i64()).unwrap_or(0))
+            };
             let Some(name) = msg.get("name").and_then(|v| v.as_str()).map(str::to_owned) else {
                 return;
             };

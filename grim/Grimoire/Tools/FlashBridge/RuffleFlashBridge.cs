@@ -535,6 +535,31 @@ namespace Grimoire.Tools.FlashBridge
             }
         }
 
+        public void CallFunctionFireAndForget(string functionName, params object[] args)
+        {
+            if (!IsReady || string.IsNullOrEmpty(functionName))
+                return;
+
+            try
+            {
+                var argArray = new JArray();
+                if (args != null)
+                {
+                    foreach (object arg in args)
+                        argArray.Add(arg == null ? JValue.CreateNull() : JToken.FromObject(arg));
+                }
+
+                SendJson(new JObject
+                {
+                    ["type"] = "call",
+                    ["no_reply"] = true,
+                    ["name"] = functionName,
+                    ["args"] = argArray
+                });
+            }
+            catch { }
+        }
+
         public void SetQuality(string quality)
         {
             if (string.IsNullOrEmpty(quality))

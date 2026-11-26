@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use winit::window::Window;
 
-pub const VERSION: &str = "1.0.1";
+pub const VERSION: &str = "1.0.2";
 
 // --- Window title -------------------------------------------------------------------------
 
@@ -260,24 +260,24 @@ pub fn save_graphics(choice: Option<Graphics>) {
     }
 }
 
-/// Frame interpolation (title-bar menu, off by default; see `ruffle_core::frame_interpolation`):
-/// this file exists while it's on.
-const INTERPOLATION_FILE: &str = "grimcodex-interpolation.txt";
+/// Frame interpolation (on by default; see `ruffle_core::frame_interpolation`):
+/// `NO_INTERPOLATION_FILE` exists only while the user explicitly turned Smooth Motion off.
+const NO_INTERPOLATION_FILE: &str = "grimcodex-no-interpolation.txt";
 
 pub fn saved_interpolation() -> bool {
-    config_dir().is_some_and(|dir| dir.join(INTERPOLATION_FILE).exists())
+    !config_dir().is_some_and(|dir| dir.join(NO_INTERPOLATION_FILE).exists())
 }
 
 pub fn save_interpolation(on: bool) {
     let Some(dir) = config_dir() else {
         return;
     };
-    let path = dir.join(INTERPOLATION_FILE);
+    let off_path = dir.join(NO_INTERPOLATION_FILE);
     if on {
-        let _ = std::fs::create_dir_all(&dir);
-        let _ = std::fs::write(path, "on\n");
+        let _ = std::fs::remove_file(off_path);
     } else {
-        let _ = std::fs::remove_file(path);
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(off_path, "off\n");
     }
 }
 
@@ -293,6 +293,7 @@ pub enum Setting {
     /// for after frame interpolation was turned on: see `render_thread_needs_restart`).
     Restart,
     ShowFps(bool),
+    Mute(bool),
     /// Whether a new version is asked about at start (see `spawn_update_check`).
     UpdateReminders(bool),
     /// Uncapped frame pacing picked in a menu (see `uncapped`): set as picked. (It was asked
@@ -446,6 +447,7 @@ pub struct MenuSettings {
     /// Whether the graphics choice applies (Windows and Linux, playing AQW).
     pub graphics_choice: bool,
     pub show_fps: bool,
+    pub muted: bool,
     pub update_reminders: bool,
     pub uncapped: bool,
     pub fps_limit: FpsLimit,
@@ -460,6 +462,7 @@ impl MenuSettings {
             graphics: saved_graphics(),
             graphics_choice: (cfg!(windows) || cfg!(target_os = "linux")) && plays_aqw(),
             show_fps: show_fps(),
+            muted: muted(),
             update_reminders: update_reminders(),
             uncapped: uncapped(),
             fps_limit: fps_limit(),
@@ -739,6 +742,42 @@ pub fn set_show_fps(on: bool) {
     }
 }
 
+const MUTED_FILE: &str = "grimcodex-muted.txt";
+static MUTED: AtomicBool = AtomicBool::new(false);
+
+pub fn load_muted() {
+    let on = config_dir().is_some_and(|dir| dir.join(MUTED_FILE).exists());
+    MUTED.store(on, Ordering::Relaxed);
+}
+
+pub fn muted() -> bool {
+    MUTED.load(Ordering::Relaxed)
+}
+
+pub fn set_muted(on: bool) {
+    MUTED.store(on, Ordering::Relaxed);
+    let Some(dir) = config_dir() else {
+        return;
+    };
+    let path = dir.join(MUTED_FILE);
+    if on {
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(path, "on\n");
+    } else {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+static ACTIVE_BACKEND: OnceLock<&'static str> = OnceLock::new();
+
+pub fn set_active_backend_label(label: &'static str) {
+    let _ = ACTIVE_BACKEND.set(label);
+}
+
+pub fn active_backend_label() -> &'static str {
+    ACTIVE_BACKEND.get().copied().unwrap_or("GPU")
+}
+
 /// Frame pacing (GrimCodex's settings). Normally pictures are sent in step with the monitor's
 /// refreshes (v-sync): a new one on every refresh, or every second, third, ..., and the last
 /// one again in between. "Uncapped" sends each new picture once, as soon as it is ready,
@@ -997,7 +1036,7 @@ const SAFE_DRAWING: [&str; 5] = [
 /// unless their `no-...` file or `safe-drawing` is next to the exe. The code that reads each
 /// variable still has it off unless it is set, so a movie on the command line and the tests
 /// run without them unless they ask.
-const DEFAULT_ON: [(&str, &str, &str); 10] = [
+const DEFAULT_ON: [(&str, &str, &str); 11] = [
     // The per-frame walks skip the branches with nothing to do: frame construction and frame
     // scripts, and `enter_frame`.
     ("lean-scripts", "RUFFLE_LEAN_SCRIPTS", "no-lean-scripts"),
@@ -1009,6 +1048,9 @@ const DEFAULT_ON: [(&str, &str, &str); 10] = [
     // New shapes are uploaded through an encoder of their own, without the wait for the last
     // picture's submit.
     ("shape-uploads", "RUFFLE_SHAPE_UPLOADS", "no-shape-uploads"),
+    // Finished shapes are uploaded within a few milliseconds per frame, the rest in the next
+    // frames (see core's `deferred_shapes`): prevents room-entry hitches in crowded rooms.
+    ("shape-budget", "RUFFLE_SHAPE_BUDGET", "no-shape-budget"),
     // The mouse pick skips plain branches the pointer is outside of.
     ("pick-bounds", "RUFFLE_PICK_BOUNDS", "no-pick-bounds"),
     // Not a speed-up: small snapshots the game takes of its own art (the darkened skill and
@@ -1046,13 +1088,10 @@ const CAPTURE_SAFE_BY_DEFAULT: bool = true;
 const RENDER_THREAD: &str = "RUFFLE_RENDER_THREAD";
 
 /// Switches that are only on with their file next to the exe.
-const BY_FILE: [(&str, &str); 13] = [
+const BY_FILE: [(&str, &str); 12] = [
     // A room-entry picture is not held for its new cached objects' shapes (see core's
     // `deferred_shapes::entry_hold`): they are drawn blank until done, as from 2026-10-28.
     ("no-entry-hold", "RUFFLE_NO_ENTRY_HOLD"),
-    // Finished shapes are uploaded within a few milliseconds per frame, the rest in the
-    // next frames (see core's `deferred_shapes`): no hitch when a room's characters load.
-    ("shape-budget", "RUFFLE_SHAPE_BUDGET"),
     ("no-shared-shapes", "RUFFLE_NO_SHARED_SHAPES"),
     ("no-pass-merge", "RUFFLE_NO_PASS_MERGE"),
     ("slow-multiply", "RUFFLE_SLOW_MULTIPLY"),
@@ -1608,12 +1647,13 @@ mod tests {
         assert!(parse_version("v1.0.10") > parse_version("1.0.9"));
     }
 
-    const NEW: [&str; 10] = [
+    const NEW: [&str; 11] = [
         "RUFFLE_LEAN_SCRIPTS",
         "RUFFLE_LEAN_FRAMES",
         "RUFFLE_LEAN_RENDER",
         "RUFFLE_PAGE_BLENDS",
         "RUFFLE_SHAPE_UPLOADS",
+        "RUFFLE_SHAPE_BUDGET",
         "RUFFLE_PICK_BOUNDS",
         "RUFFLE_SHARP_SNAPSHOTS",
         "RUFFLE_EARLY_SCRIPTS",

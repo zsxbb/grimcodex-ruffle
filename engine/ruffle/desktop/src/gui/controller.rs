@@ -138,6 +138,13 @@ impl GuiController {
         };
         let adapter_info = adapter.get_info();
         crate::grimcodex::set_adapter_ids(adapter_info.vendor, adapter_info.device);
+        crate::grimcodex::set_active_backend_label(match adapter_info.backend {
+            wgpu::Backend::Dx12 => "DX12",
+            wgpu::Backend::Vulkan => "VULKAN",
+            wgpu::Backend::Metal => "METAL",
+            wgpu::Backend::Gl => "OPENGL",
+            _ => "GPU",
+        });
         #[cfg(not(windows))]
         crate::grimcodex::set_video_memory_adapter(adapter.clone());
         // Which drawing speed-ups are switched off (for test logs).
@@ -1220,25 +1227,47 @@ fn aqw_warn_vulkan_fallback(
     ));
 }
 
-/// AQW build: draws the FPS counter (a small badge in the top-left corner of the game); returns
-/// how many shapes it added.
+/// AQW build: draws the iOS-style frosted dark capsule HUD in the top-right corner of the game
+/// (keeps both the top-left player portrait and top-center monster frame unobstructed).
 fn fps_counter(ctx: &egui::Context, top: f64) -> usize {
-    use egui::{Color32, CornerRadius, FontId, Id, LayerId, Order, Rect, pos2, vec2};
+    use egui::{Color32, CornerRadius, FontId, Id, LayerId, Order, Rect, Stroke, StrokeKind, pos2, vec2};
     let fps = f32::from_bits(crate::grimcodex::SHOWN_FPS.load(std::sync::atomic::Ordering::Relaxed));
-    let text = format!("{fps:.0} FPS");
-    let origin = pos2(8.0, top as f32 / ctx.pixels_per_point() + 8.0);
+    let mem_mb = crate::grimcodex::memory_now_mb();
+    let text = format!("{fps:.0} FPS  ·  {mem_mb} MB");
     let painter = ctx.layer_painter(LayerId::new(Order::Background, Id::new("grimcodex_fps")));
-    let galley = painter.layout_no_wrap(text, FontId::monospace(12.0), Color32::from_rgb(232, 234, 242));
-    let badge = Rect::from_min_size(origin, galley.size() + vec2(22.0, 8.0));
+    let galley = painter.layout_no_wrap(
+        text,
+        FontId::proportional(12.0),
+        Color32::from_rgb(245, 245, 247),
+    );
+    let badge_size = galley.size() + vec2(24.0, 8.0);
+    let screen = ctx.content_rect();
+    let origin = pos2(
+        (screen.right() - badge_size.x - 10.0).max(8.0),
+        top as f32 / ctx.pixels_per_point() + 8.0,
+    );
+    let badge = Rect::from_min_size(origin, badge_size);
+    // iOS semantic status colors (#30D158 green, #FFD60A yellow, #FF453A red)
     let dot = if fps >= 50.0 {
-        Color32::from_rgb(124, 220, 140)
+        Color32::from_rgb(48, 209, 88)
     } else if fps >= 24.0 {
-        Color32::from_rgb(232, 210, 120)
+        Color32::from_rgb(255, 214, 10)
     } else {
-        Color32::from_rgb(240, 120, 110)
+        Color32::from_rgb(255, 69, 58)
     };
-    painter.rect_filled(badge, CornerRadius::same(7), Color32::from_rgba_premultiplied(14, 16, 22, 200));
-    painter.circle_filled(pos2(badge.left() + 9.0, badge.center().y), 3.0, dot);
-    painter.galley(badge.left_top() + vec2(16.0, 4.0), galley, Color32::from_rgb(232, 234, 242));
-    3
+    let radius = CornerRadius::same((badge.height() * 0.5).round() as u8);
+    painter.rect_filled(badge, radius, Color32::from_rgba_premultiplied(18, 18, 20, 228));
+    painter.rect_stroke(
+        badge,
+        radius,
+        Stroke::new(1.0, Color32::from_rgba_premultiplied(255, 255, 255, 24)),
+        StrokeKind::Inside,
+    );
+    painter.circle_filled(pos2(badge.left() + 10.0, badge.center().y), 2.8, dot);
+    painter.galley(
+        badge.left_top() + vec2(17.0, 4.0),
+        galley,
+        Color32::from_rgb(245, 245, 247),
+    );
+    4
 }

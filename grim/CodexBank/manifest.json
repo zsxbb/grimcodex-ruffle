@@ -1,10 +1,10 @@
 {
-  "app_version":  "1.0.1",
+  "app_version":  "1.0.2",
   "app_download_url": "https://github.com/zsxbb/grimcodex-ruffle/releases/latest/download/GrimCodex.Ruffle.exe",
   "app_release_url": "https://github.com/zsxbb/grimcodex-ruffle/releases/latest",
   "engine_download_url": "https://github.com/zsxbb/grimcodex-ruffle/releases/latest/download/grimcodex-engine.zip",
   "engine_sha256": "DAF095C01711418F649060D04F4B9D770847F7AC7F4DC4CB429DCDC377F73ACB",
-  "changelog": "GrimCodex Ruffle v1.0.1 - Fix accidental keyboard selection on pad/cell dropdowns",
+  "changelog": "GrimCodex Ruffle v1.0.2 - Redesigned Control Center right-click panel & FPS HUD (Smooth Motion on by default, Mute Audio), 23 preset Pinned Quests, and faster IPC",
   "scripts": [
     {
       "name": "Archmage/1 Tapping Into the Arcane.gbot",

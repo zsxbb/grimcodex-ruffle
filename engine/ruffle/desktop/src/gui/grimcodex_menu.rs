@@ -16,7 +16,7 @@ pub fn contents(ui: &mut Ui, event_loop: &EventLoopProxy<RuffleEvent>) {
     panel_style(ui.style_mut());
     let z = 1.0;
     ui.set_width(WIDTH * z);
-    ui.spacing_mut().item_spacing = vec2(0.0, 2.0 * z);
+    ui.spacing_mut().item_spacing = vec2(0.0, 8.0 * z);
 
     // Header.
     let (rect, _) = ui.allocate_exact_size(vec2(WIDTH * z, 24.0 * z), Sense::hover());
