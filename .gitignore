@@ -3,6 +3,8 @@
 ## Unified build & distribution output
 /dist/
 /release-artifacts/
+/Mods/
+/plugins/
 
 ## Rust engine build artifacts & temp
 /engine/target/

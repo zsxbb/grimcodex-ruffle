@@ -1,4 +1,5 @@
 mod fetch;
+mod mods;
 
 use crate::backends::navigator::fetch::{Response, ResponseBody};
 use crate::content::PlayingContent;
@@ -223,6 +224,19 @@ impl<F: FutureSpawner<Error> + 'static, I: NavigatorInterface> NavigatorBackend
                 })
             }
             _ => Box::pin(async move {
+                if request.method() == NavigationMethod::Get
+                    && let Some((_local_path, bytes)) = mods::resolve_swf_override(&processed_url)
+                {
+                    let response: Box<dyn SuccessResponse> = Box::new(Response {
+                        url: processed_url.to_string(),
+                        response_body: ResponseBody::File(Ok(bytes)),
+                        text_encoding: None,
+                        status: 200,
+                        redirected: false,
+                    });
+                    return Ok(response);
+                }
+
                 let client = client.ok_or_else(|| ErrorResponse {
                     url: processed_url.to_string(),
                     error: Error::FetchError("Network unavailable".to_string()),
