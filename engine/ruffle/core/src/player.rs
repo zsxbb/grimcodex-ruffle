@@ -1276,7 +1276,19 @@ impl Player {
         }
     }
 
+    /// Synthesizes `KeyUp` for every key currently held down so ActionScript
+    /// listeners (such as AQW's WASD movement) never stay stuck when a menu
+    /// opens or the player window loses focus.
+    pub fn release_all_keys(&mut self) {
+        for key in self.input.pressed_keys() {
+            self.handle_input_event(PlayerEvent::KeyUp { key });
+        }
+    }
+
     fn handle_focus_event(&mut self, event: PlayerEvent) -> bool {
+        if matches!(event, PlayerEvent::FocusLost) {
+            self.release_all_keys();
+        }
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             self.input.clear_keys();

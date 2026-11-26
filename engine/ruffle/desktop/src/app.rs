@@ -1006,6 +1006,18 @@ impl MainWindow {
             self.gui.settle_present();
         }
         if self.gui.handle_event(&event) {
+            if let WindowEvent::KeyboardInput {
+                event:
+                    ref key_event @ KeyEvent {
+                        state: ElementState::Released,
+                        ..
+                    },
+                ..
+            } = event
+            {
+                let key = winit_input_to_ruffle_key_descriptor(key_event);
+                self.player.handle_event(PlayerEvent::KeyUp { key });
+            }
             // Event consumed by GUI.
             return;
         }
@@ -1132,8 +1144,10 @@ impl MainWindow {
                 let handled = self.player.handle_event(event);
                 if !handled && state == ElementState::Pressed && button == RuffleMouseButton::Right
                 {
-                    // Show context menu.
+                    // Show context menu, releasing any held movement/hotkey keys immediately so
+                    // ActionScript `keyUp` listeners (e.g. AQW WASD movement) never get stuck.
                     if let Some(mut player) = self.player.get() {
+                        player.release_all_keys();
                         let context_menu = player.prepare_context_menu();
                         // AQW build: GrimCodex's settings too (AQW turns Flash's menu off).
                         let settings = Some(crate::grimcodex::MenuSettings::now());
@@ -1190,6 +1204,10 @@ impl MainWindow {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if self.gui.is_context_menu_visible() {
+                    if event.state == ElementState::Released {
+                        let key = winit_input_to_ruffle_key_descriptor(&event);
+                        self.player.handle_event(PlayerEvent::KeyUp { key });
+                    }
                     return;
                 }
 

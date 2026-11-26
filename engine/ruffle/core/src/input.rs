@@ -77,14 +77,15 @@ impl ClickEventData {
 }
 
 pub struct InputManager {
-    /// Tracks which physical keys are currently pressed, identified by (physical key, location).
+    /// Tracks which physical keys are currently pressed, identified by (physical key, location),
+    /// alongside their original `KeyDescriptor` so held keys can synthesize matching `KeyUp`s.
     ///
     /// We use physical keys rather than logical keys because the logical key can change
     /// between key-down and key-up events. For example, if you press 'w', then press Shift,
     /// then release 'w', the key-up event will report 'W' (uppercase) even though 'w'
     /// (lowercase) was pressed. By tracking physical keys, we correctly match key-up
     /// events to their corresponding key-down events regardless of modifier state changes.
-    keys_down_phys_loc: HashSet<(PhysicalKey, KeyLocation)>,
+    keys_down_phys_loc: HashMap<(PhysicalKey, KeyLocation), KeyDescriptor>,
 
     keys_down: HashSet<KeyCode>,
     keys_toggled: HashSet<KeyCode>,
@@ -101,7 +102,7 @@ pub struct InputManager {
 impl InputManager {
     pub fn new(gamepad_button_mapping: HashMap<GamepadButton, KeyCode>) -> Self {
         Self {
-            keys_down_phys_loc: HashSet::new(),
+            keys_down_phys_loc: HashMap::new(),
             keys_down: HashSet::new(),
             keys_toggled: HashSet::new(),
             last_key: KeyCode::UNKNOWN,
@@ -113,6 +114,10 @@ impl InputManager {
             #[cfg(not(any(target_os = "linux", target_os = "macos")))]
             key_code_mapping_type: KeyCodeMappingType::Logical,
         }
+    }
+
+    pub fn pressed_keys(&self) -> Vec<KeyDescriptor> {
+        self.keys_down_phys_loc.values().copied().collect()
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -182,7 +187,7 @@ impl InputManager {
 
             PlayerEvent::KeyDown { key } => {
                 self.keys_down_phys_loc
-                    .insert((key.physical_key, key.key_location));
+                    .insert((key.physical_key, key.key_location), key);
 
                 let key_code = self.map_to_key_code(key)?;
                 let key_char = self.map_to_key_char(key);
@@ -195,9 +200,10 @@ impl InputManager {
                 }
             }
             PlayerEvent::KeyUp { key } => {
-                if !self
+                if self
                     .keys_down_phys_loc
                     .remove(&(key.physical_key, key.key_location))
+                    .is_none()
                 {
                     // Ignore spurious KeyUp events that may happen e.g. during IME.
                     // We assume that in order for a key to generate KeyUp, it had to
@@ -652,5 +658,28 @@ mod tests {
                 })
                 .is_none()
         );
+    }
+
+    #[test]
+    fn pressed_keys_release_cleanly_before_physical_keyup() {
+        let mut input = InputManager::new(HashMap::new());
+        let w = key('w', PhysicalKey::KeyW);
+        let d = key('d', PhysicalKey::KeyD);
+
+        assert!(input.process_event(PlayerEvent::KeyDown { key: w }).is_some());
+        assert!(input.process_event(PlayerEvent::KeyDown { key: d }).is_some());
+        assert!(input.is_key_down(KeyCode::W));
+        assert!(input.is_key_down(KeyCode::D));
+
+        // Releasing all pressed keys (e.g. when right-click menu opens) emits KeyUp once per key.
+        for held in input.pressed_keys() {
+            assert!(input.process_event(PlayerEvent::KeyUp { key: held }).is_some());
+        }
+        assert!(!input.is_key_down(KeyCode::W));
+        assert!(!input.is_key_down(KeyCode::D));
+
+        // Physical KeyUp later is safely ignored without firing a duplicate KeyUp.
+        assert!(input.process_event(PlayerEvent::KeyUp { key: w }).is_none());
+        assert!(input.process_event(PlayerEvent::KeyUp { key: d }).is_none());
     }
 }
