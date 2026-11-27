@@ -1290,7 +1290,14 @@ impl MainWindow {
             }
             Setting::Graphics(choice) => {
                 if (cfg!(windows) || cfg!(target_os = "linux")) && choice != grimcodex::saved_graphics() {
-                    self.gui.ask_graphics_restart(choice);
+                    grimcodex::save_graphics(choice);
+                    tracing::info!(
+                        "Graphics preference saved: {} (takes effect on next launch)",
+                        choice.map_or("Automatic", grimcodex::Graphics::name)
+                    );
+                    if self.preferences.cli.parent_hwnd.is_none() {
+                        self.gui.ask_graphics_restart(choice);
+                    }
                 }
             }
             Setting::RestartWithGraphics(choice) => {
@@ -1350,11 +1357,42 @@ impl MainWindow {
             }
             Setting::Performance(level) => {
                 grimcodex::set_performance(level);
+                let pct = grimcodex::render_scale_percent();
                 tracing::info!(
-                    "Performance mode: {level:?} (the game is drawn at {:.0} % of the window's width and height)",
-                    level.scale() * 100.0
+                    "Performance mode: {level:?} (the game is drawn at {pct} % of the window's width and height)"
                 );
-                // As after a resize: the movie is drawn at its new size from the next picture.
+                if let Some(mut player) = self.player.get() {
+                    ruffle_render_wgpu::render_thread::settle::<crate::gui::MovieView>(
+                        player.renderer_mut(),
+                    );
+                }
+                self.gui.settle_present();
+                let size = self.gui.window().inner_size();
+                if let Some(mut player) = self.player.get() {
+                    let viewport_scale_factor = self.gui.window().scale_factor();
+                    player.set_viewport_dimensions(ViewportDimensions {
+                        width: grimcodex::drawn_len(size.width),
+                        height: grimcodex::drawn_len(
+                            size.height.saturating_sub(self.gui.height_offset() as u32),
+                        ),
+                        scale_factor: viewport_scale_factor * grimcodex::render_scale(),
+                    });
+                }
+                self.frame_since_render = true;
+                self.gui.window().request_redraw();
+            }
+            Setting::RenderScale(percent) => {
+                grimcodex::set_render_scale_percent(percent);
+                let pct = grimcodex::render_scale_percent();
+                tracing::info!(
+                    "Render scale set to {pct} % of the window's width and height"
+                );
+                if let Some(mut player) = self.player.get() {
+                    ruffle_render_wgpu::render_thread::settle::<crate::gui::MovieView>(
+                        player.renderer_mut(),
+                    );
+                }
+                self.gui.settle_present();
                 let size = self.gui.window().inner_size();
                 if let Some(mut player) = self.player.get() {
                     let viewport_scale_factor = self.gui.window().scale_factor();

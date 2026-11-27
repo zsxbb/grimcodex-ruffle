@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use winit::window::Window;
 
-pub const VERSION: &str = "1.0.2";
+pub const VERSION: &str = "1.1.0";
 
 // --- Window title -------------------------------------------------------------------------
 
@@ -302,6 +302,8 @@ pub enum Setting {
     FpsLimit(FpsLimit),
     /// Performance mode (see `Performance`).
     Performance(Performance),
+    /// Render scale percentage in 3% steps from 70% to 100% (default 97%).
+    RenderScale(u8),
     /// The memory limit in MB, 0 for none (see `memory_limit_mb`).
     MemoryLimit(u32),
     /// Everything that can be freed is freed now (see `app::free_memory`).
@@ -452,6 +454,7 @@ pub struct MenuSettings {
     pub uncapped: bool,
     pub fps_limit: FpsLimit,
     pub performance: Performance,
+    pub render_scale_percent: u8,
     pub memory_limit_mb: u32,
 }
 
@@ -467,6 +470,7 @@ impl MenuSettings {
             uncapped: uncapped(),
             fps_limit: fps_limit(),
             performance: performance(),
+            render_scale_percent: render_scale_percent(),
             memory_limit_mb: memory_limit_mb(),
         }
     }
@@ -616,6 +620,15 @@ pub fn memory_now_mb() -> u64 {
 // included; GrimCodex's menu and FPS counter stay sharp. Off by default: a graphics card that
 // is not the limit gains nothing from it.
 
+pub const SCALE_MIN_PERCENT: u8 = 50;
+pub const SCALE_MAX_PERCENT: u8 = 100;
+pub const DEFAULT_SCALE_PERCENT: u8 = 95;
+
+/// Clamps a custom render scale percentage into `50..=100`.
+pub fn clamp_scale_percent(percent: u8) -> u8 {
+    percent.clamp(SCALE_MIN_PERCENT, SCALE_MAX_PERCENT)
+}
+
 /// How much of the window's resolution the game is drawn at.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Performance {
@@ -626,72 +639,81 @@ pub enum Performance {
 }
 
 impl Performance {
-    /// The share of the window's width and height the game is drawn at.
-    pub fn scale(self) -> f64 {
+    /// The percentage associated with a legacy Performance preset.
+    pub fn percent(self) -> u8 {
         match self {
-            Performance::Off => 1.0,
-            Performance::Balanced => 0.85,
-            Performance::Fast => 0.7,
+            Performance::Off => 100,
+            Performance::Balanced => 85,
+            Performance::Fast => 70,
         }
     }
 
-    fn from_saved(text: &str) -> Self {
-        match text.trim() {
-            "balanced" => Performance::Balanced,
-            "fast" => Performance::Fast,
-            _ => Performance::Off,
-        }
-    }
-
-    fn from_index(index: u8) -> Self {
-        match index {
-            1 => Performance::Balanced,
-            2 => Performance::Fast,
-            _ => Performance::Off,
+    fn from_percent(percent: u8) -> Self {
+        match percent {
+            95..=100 => Performance::Off,
+            80..=94 => Performance::Balanced,
+            _ => Performance::Fast,
         }
     }
 }
 
-/// Holds "balanced" or "fast" while Performance mode is on; no file means off.
+/// Holds the saved render scale percentage ("50".."100", or legacy "balanced"/"fast");
+/// no file means `DEFAULT_SCALE_PERCENT` (95%).
 const PERFORMANCE_FILE: &str = "grimcodex-performance.txt";
 
-static PERFORMANCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+static RENDER_SCALE_PERCENT: std::sync::atomic::AtomicU8 =
+    std::sync::atomic::AtomicU8::new(DEFAULT_SCALE_PERCENT);
 
-/// Reads the saved choice. (`RUFFLE_TEST_PERFORMANCE=balanced|fast`, testing: instead of it.)
+fn parse_saved_scale_percent(text: &str) -> u8 {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "off" => 100,
+        "balanced" => 85,
+        "fast" => 70,
+        other => other
+            .trim_end_matches('%')
+            .parse::<u8>()
+            .map(clamp_scale_percent)
+            .unwrap_or(DEFAULT_SCALE_PERCENT),
+    }
+}
+
+/// Reads the saved render scale. (`RUFFLE_TEST_PERFORMANCE=balanced|fast|50..100`, testing.)
 pub fn load_performance() {
     let saved = std::env::var("RUFFLE_TEST_PERFORMANCE").ok().or_else(|| {
         config_dir().and_then(|dir| std::fs::read_to_string(dir.join(PERFORMANCE_FILE)).ok())
     });
-    let level = saved.as_deref().map_or(Performance::Off, Performance::from_saved);
-    PERFORMANCE.store(level as u8, Ordering::Relaxed);
+    let pct = saved
+        .as_deref()
+        .map_or(DEFAULT_SCALE_PERCENT, parse_saved_scale_percent);
+    RENDER_SCALE_PERCENT.store(pct, Ordering::Relaxed);
 }
 
 pub fn performance() -> Performance {
-    Performance::from_index(PERFORMANCE.load(Ordering::Relaxed))
+    Performance::from_percent(render_scale_percent())
 }
 
 pub fn set_performance(level: Performance) {
-    PERFORMANCE.store(level as u8, Ordering::Relaxed);
+    set_render_scale_percent(level.percent());
+}
+
+pub fn render_scale_percent() -> u8 {
+    clamp_scale_percent(RENDER_SCALE_PERCENT.load(Ordering::Relaxed))
+}
+
+pub fn set_render_scale_percent(percent: u8) {
+    let pct = clamp_scale_percent(percent);
+    RENDER_SCALE_PERCENT.store(pct, Ordering::Relaxed);
     let Some(dir) = config_dir() else {
         return;
     };
     let path = dir.join(PERFORMANCE_FILE);
-    let text = match level {
-        Performance::Off => {
-            let _ = std::fs::remove_file(path);
-            return;
-        }
-        Performance::Balanced => "balanced\n",
-        Performance::Fast => "fast\n",
-    };
     let _ = std::fs::create_dir_all(&dir);
-    let _ = std::fs::write(path, text);
+    let _ = std::fs::write(path, format!("{pct}\n"));
 }
 
-/// The share of the window's width and height the game is drawn at (1 without Performance
-/// mode).
+/// The share of the window's width and height the game is drawn at (default 0.95).
 pub fn render_scale() -> f64 {
-    performance().scale()
+    f64::from(render_scale_percent()) / 100.0
 }
 
 /// A length of the window in the pixels the game is drawn at: the same without Performance
@@ -1445,7 +1467,9 @@ pub fn performance_offer_tick(
 ) {
     use ruffle_render::quality::StageQuality;
     use std::sync::atomic::Ordering;
-    if PERFORMANCE_OFFER_DONE.load(Ordering::Relaxed) || performance() != Performance::Off {
+    if PERFORMANCE_OFFER_DONE.load(Ordering::Relaxed)
+        || render_scale_percent() < DEFAULT_SCALE_PERCENT
+    {
         return;
     }
     let windows_seen = PERFORMANCE_WINDOWS_SEEN.fetch_add(1, Ordering::Relaxed) + 1;

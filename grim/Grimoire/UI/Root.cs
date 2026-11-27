@@ -118,15 +118,153 @@ namespace Grimoire.UI
             UISkinManager.Init();
             this.MaximizedBounds = Screen.FromHandle(this.Handle).WorkingArea;
             InitializeComponent();
-            this.CenterToScreen();
             Instance = this;
             this.Text = title;
             UISkinManager.ApplyThemeToControl(this);
+            LayoutToolbarControls();
+            ApplyInitialWindowSize();
+            this.WindowState = FormWindowState.Normal;
+            this.CenterToScreen();
+        }
+
+        private void ApplyInitialWindowSize()
+        {
+            try
+            {
+                Rectangle work = Screen.FromHandle(this.Handle).WorkingArea;
+                float dpi = CodexThemeEngine.GetDpiScale(this);
+                int barH = splitContainer1 != null ? splitContainer1.Height : (int)Math.Round(30f * dpi);
+
+                // Measure top-level menu items using Available (Visible is false before Show())
+                int leftMenuW = (int)Math.Round(10f * dpi);
+                if (darkMenuStrip1 != null)
+                {
+                    foreach (ToolStripItem item in darkMenuStrip1.Items)
+                    {
+                        if (item.Available)
+                            leftMenuW += item.GetPreferredSize(Size.Empty).Width;
+                    }
+                }
+                int rightCtrlW = pnlMenuControls != null ? pnlMenuControls.Width : (int)Math.Round(380f * dpi);
+                int minToolbarW = leftMenuW + rightCtrlW + (int)Math.Round(14f * dpi);
+
+                // Compact windowed default: 960px at 100% DPI, gently scaled at high DPI without filling the screen
+                int desiredW = (int)Math.Round(960f * Math.Min(dpi, 1.12f));
+                int maxW = Math.Max(640, (int)Math.Round(work.Width * 0.72));
+                int clientW = Math.Min(maxW, Math.Max(desiredW, minToolbarW));
+
+                // Preserve AQW's native 960:550 stage ratio + top bar height, clamped to comfortable screen height
+                int gameH = (int)Math.Round(clientW * (550.0 / 960.0));
+                int maxH = Math.Max(420, (int)Math.Round(work.Height * 0.74));
+                int clientH = barH + gameH;
+                if (clientH > maxH)
+                {
+                    clientH = maxH;
+                    int adjustedGameH = Math.Max(240, clientH - barH);
+                    clientW = Math.Min(maxW, Math.Max(minToolbarW, (int)Math.Round(adjustedGameH * (960.0 / 550.0))));
+                }
+
+                this.ClientSize = new Size(clientW, clientH);
+            }
+            catch { }
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            CodexThemeEngine.ApplyWindowChrome(this);
+            LayoutToolbarControls();
+        }
+
+        protected override void OnDpiChanged(DpiChangedEventArgs e)
+        {
+            base.OnDpiChanged(e);
+            LayoutToolbarControls();
+        }
+
+        public void LayoutToolbarControls()
+        {
+            if (splitContainer1 == null || pnlMenuControls == null || chkStartBot == null)
+                return;
+
+            try
+            {
+                float dpi = CodexThemeEngine.GetDpiScale(this);
+
+                // Match buttons to the real Win32 ComboBox height so every control aligns pixel-for-pixel vertically
+                int comboH = cbAutoAttackMode.Height;
+                if (comboH < 18) comboH = (int)Math.Round(21f * dpi);
+
+                int barH = Math.Max(comboH + (int)Math.Round(8f * dpi), (int)Math.Round(30f * dpi));
+                int ctrlY = (barH - comboH) / 2;
+                int gap = Math.Max(2, (int)Math.Round(3f * dpi));
+                int tightGap = Math.Max(2, (int)Math.Round(2f * dpi));
+
+                splitContainer1.Height = barH;
+                pnlMenuControls.Height = barH;
+
+                // Measure "Start Bot" dynamically so there is no dead whitespace to the right of the label
+                int startBotH = Math.Min(comboH, Math.Max(16, (int)Math.Round(18f * dpi)));
+                int swH = Math.Min(startBotH - 2, Math.Max(12, (int)Math.Round(14f * dpi)));
+                int swW = Math.Max((int)Math.Round(swH * 1.82f), (int)Math.Round(25f * dpi));
+                int textW = TextRenderer.MeasureText(chkStartBot.Text, chkStartBot.Font, new Size(int.MaxValue, startBotH),
+                    TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding).Width;
+                int startBotW = swW + (int)Math.Round(6f * dpi) + textW + (int)Math.Round(2f * dpi);
+
+                int x = gap;
+                chkStartBot.SetBounds(x, (barH - startBotH) / 2, startBotW, startBotH);
+                x = chkStartBot.Right + gap;
+
+                int chkAA = Math.Min(comboH - 2, Math.Max(14, (int)Math.Round(15f * dpi)));
+                chkAutoAttack.SetBounds(x, (barH - chkAA) / 2, chkAA, chkAA);
+                x = chkAutoAttack.Right + tightGap;
+
+                int aaTextW = TextRenderer.MeasureText("Auto and Pot", cbAutoAttackMode.Font, new Size(int.MaxValue, comboH),
+                    TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding).Width;
+                int aaW = Math.Max((int)Math.Round(78f * dpi), aaTextW + (int)Math.Round(18f * dpi));
+                cbAutoAttackMode.SetBounds(x, ctrlY, aaW, comboH);
+                x = cbAutoAttackMode.Right + tightGap;
+
+                int padW = (int)Math.Round(50f * dpi);
+                cbPads.SetBounds(x, ctrlY, padW, comboH);
+                x = cbPads.Right + tightGap;
+
+                int cellW = (int)Math.Round(50f * dpi);
+                cbCells.SetBounds(x, ctrlY, cellW, comboH);
+                x = cbCells.Right + tightGap;
+
+                // Exact same height and top Y as the ComboBoxes for razor-clean horizontal alignment
+                btnGetCell.SetBounds(x, ctrlY, comboH, comboH);
+                x = btnGetCell.Right + tightGap;
+
+                int bankTextW = TextRenderer.MeasureText(btnBank.Text, btnBank.Font, new Size(int.MaxValue, comboH),
+                    TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding).Width;
+                int bankW = Math.Max((int)Math.Round(36f * dpi), bankTextW + (int)Math.Round(10f * dpi));
+                btnBank.SetBounds(x, ctrlY, bankW, comboH);
+                x = btnBank.Right + gap;
+
+                pnlMenuControls.Width = x;
+                if (darkMenuStrip1 != null)
+                {
+                    int vPad = Math.Max(2, (barH - comboH) / 2);
+                    darkMenuStrip1.Padding = new Padding((int)Math.Round(3f * dpi), vPad, 2, vPad);
+                    int itemHPad = Math.Max(2, (int)Math.Round(2f * dpi));
+                    foreach (ToolStripItem item in darkMenuStrip1.Items)
+                    {
+                        item.Padding = new Padding(itemHPad, 0, itemHPad, 0);
+                    }
+                }
+            }
+            catch { }
         }
 
         private void Root_Load(object sender, EventArgs e)
         {
             UISkinManager.ApplyThemeToControl(this);
+            LayoutToolbarControls();
+            ApplyInitialWindowSize();
+            this.WindowState = FormWindowState.Normal;
+            this.CenterToScreen();
             //Task.Factory.StartNew(Proxy.Instance.Start, TaskCreationOptions.LongRunning);
             Flash.FlashError += (flashCtrl, ex, func, args) => {
                 try
@@ -140,6 +278,7 @@ namespace Grimoire.UI
             LoadPlugins();
             LoadCharSelect();
             UISkinManager.ApplyThemeToControl(this);
+            LayoutToolbarControls();
             //auraClearer();
 
             // Periodic memory optimizer to clear Flash ActiveX leaks
@@ -779,11 +918,11 @@ namespace Grimoire.UI
             // 
             // gameContainer
             // 
-            this.gameContainer.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(30)))), ((int)(((byte)(36)))));
+            this.gameContainer.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(24)))), ((int)(((byte)(24)))), ((int)(((byte)(28)))));
             this.gameContainer.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.gameContainer.Location = new System.Drawing.Point(0, 27);
+            this.gameContainer.Location = new System.Drawing.Point(0, 32);
             this.gameContainer.Name = "gameContainer";
-            this.gameContainer.Size = new System.Drawing.Size(962, 552);
+            this.gameContainer.Size = new System.Drawing.Size(962, 547);
             this.gameContainer.TabIndex = 40;
             // 
             // splitContainer1
@@ -797,8 +936,8 @@ namespace Grimoire.UI
             // splitContainer1.Panel1
             // 
             this.pnlMenuControls.Dock = System.Windows.Forms.DockStyle.Right;
-            this.pnlMenuControls.Size = new System.Drawing.Size(425, 27);
-            this.pnlMenuControls.BackColor = System.Drawing.Color.FromArgb(36, 36, 46);
+            this.pnlMenuControls.Size = new System.Drawing.Size(422, 32);
+            this.pnlMenuControls.BackColor = System.Drawing.Color.FromArgb(28, 28, 30);
             this.pnlMenuControls.Controls.Add(this.btnBank);
             this.pnlMenuControls.Controls.Add(this.btnGetCell);
             this.pnlMenuControls.Controls.Add(this.cbCells);
@@ -814,7 +953,7 @@ namespace Grimoire.UI
             // 
             this.splitContainer1.Panel2.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(28)))), ((int)(((byte)(32)))), ((int)(((byte)(40)))));
             this.splitContainer1.Panel2Collapsed = true;
-            this.splitContainer1.Size = new System.Drawing.Size(962, 27);
+            this.splitContainer1.Size = new System.Drawing.Size(962, 32);
             this.splitContainer1.SplitterDistance = 824;
             this.splitContainer1.SplitterWidth = 1;
             this.splitContainer1.TabIndex = 38;
@@ -822,12 +961,12 @@ namespace Grimoire.UI
             // btnGetCell
             // 
             this.btnGetCell.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
-            this.btnGetCell.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(27)))), ((int)(((byte)(27)))), ((int)(((byte)(27)))));
+            this.btnGetCell.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(44)))), ((int)(((byte)(44)))), ((int)(((byte)(46)))));
             this.btnGetCell.Checked = false;
-            this.btnGetCell.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(200)))), ((int)(((byte)(200)))), ((int)(((byte)(200)))));
-            this.btnGetCell.Location = new System.Drawing.Point(352, 3);
+            this.btnGetCell.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(245)))), ((int)(((byte)(245)))), ((int)(((byte)(247)))));
+            this.btnGetCell.Location = new System.Drawing.Point(354, 5);
             this.btnGetCell.Name = "btnGetCell";
-            this.btnGetCell.Size = new System.Drawing.Size(18, 21);
+            this.btnGetCell.Size = new System.Drawing.Size(22, 22);
             this.btnGetCell.TabIndex = 39;
             this.btnGetCell.Text = "x";
             this.btnGetCell.Click += new System.EventHandler(this.btnGetCell_Click);
@@ -835,11 +974,11 @@ namespace Grimoire.UI
             // chkStartBot
             // 
             this.chkStartBot.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
-            this.chkStartBot.AutoSize = true;
+            this.chkStartBot.AutoSize = false;
             this.chkStartBot.BackColor = System.Drawing.Color.Transparent;
-            this.chkStartBot.Location = new System.Drawing.Point(6, 5);
+            this.chkStartBot.Location = new System.Drawing.Point(2, 7);
             this.chkStartBot.Name = "chkStartBot";
-            this.chkStartBot.Size = new System.Drawing.Size(67, 17);
+            this.chkStartBot.Size = new System.Drawing.Size(84, 18);
             this.chkStartBot.TabIndex = 38;
             this.chkStartBot.Text = "Start Bot";
             this.chkStartBot.CheckedChanged += new System.EventHandler(this.chkStartBot_CheckedChanged);
@@ -847,11 +986,11 @@ namespace Grimoire.UI
             // chkAutoAttack
             // 
             this.chkAutoAttack.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
-            this.chkAutoAttack.AutoSize = true;
+            this.chkAutoAttack.AutoSize = false;
             this.chkAutoAttack.BackColor = System.Drawing.Color.Transparent;
-            this.chkAutoAttack.Location = new System.Drawing.Point(76, 5);
+            this.chkAutoAttack.Location = new System.Drawing.Point(90, 8);
             this.chkAutoAttack.Name = "chkAutoAttack";
-            this.chkAutoAttack.Size = new System.Drawing.Size(15, 14);
+            this.chkAutoAttack.Size = new System.Drawing.Size(15, 16);
             this.chkAutoAttack.TabIndex = 37;
             this.chkAutoAttack.Text = "";
             this.chkAutoAttack.CheckedChanged += new System.EventHandler(this.chkAutoAttack_CheckedChanged);
@@ -863,21 +1002,21 @@ namespace Grimoire.UI
             this.cbAutoAttackMode.Items.AddRange(new object[] {
             "Auto Attack",
             "Auto and Pot"});
-            this.cbAutoAttackMode.Location = new System.Drawing.Point(94, 3);
+            this.cbAutoAttackMode.Location = new System.Drawing.Point(108, 5);
             this.cbAutoAttackMode.Name = "cbAutoAttackMode";
-            this.cbAutoAttackMode.Size = new System.Drawing.Size(98, 21);
+            this.cbAutoAttackMode.Size = new System.Drawing.Size(94, 22);
             this.cbAutoAttackMode.TabIndex = 40;
             this.cbAutoAttackMode.SelectedIndex = 0;
             // 
             // btnBank
             // 
             this.btnBank.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
-            this.btnBank.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(27)))), ((int)(((byte)(27)))), ((int)(((byte)(27)))));
+            this.btnBank.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(44)))), ((int)(((byte)(44)))), ((int)(((byte)(46)))));
             this.btnBank.Checked = false;
-            this.btnBank.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(200)))), ((int)(((byte)(200)))), ((int)(((byte)(200)))));
-            this.btnBank.Location = new System.Drawing.Point(373, 2);
+            this.btnBank.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(245)))), ((int)(((byte)(245)))), ((int)(((byte)(247)))));
+            this.btnBank.Location = new System.Drawing.Point(380, 5);
             this.btnBank.Name = "btnBank";
-            this.btnBank.Size = new System.Drawing.Size(42, 23);
+            this.btnBank.Size = new System.Drawing.Size(40, 22);
             this.btnBank.TabIndex = 36;
             this.btnBank.Text = "Bank";
             this.btnBank.Click += new System.EventHandler(this.btnBank_Click_1);
@@ -886,10 +1025,10 @@ namespace Grimoire.UI
             // 
             this.cbCells.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)));
             this.cbCells.FormattingEnabled = true;
-            this.cbCells.Location = new System.Drawing.Point(273, 3);
+            this.cbCells.Location = new System.Drawing.Point(280, 5);
             this.cbCells.MaxDropDownItems = 50;
             this.cbCells.Name = "cbCells";
-            this.cbCells.Size = new System.Drawing.Size(76, 21);
+            this.cbCells.Size = new System.Drawing.Size(70, 22);
             this.cbCells.TabIndex = 18;
             this.cbCells.TabStop = false;
             this.cbCells.SelectedIndexChanged += new System.EventHandler(this.cbCells_SelectedIndexChanged);
@@ -911,10 +1050,10 @@ namespace Grimoire.UI
             "Bottom",
             "Up",
             "Down"});
-            this.cbPads.Location = new System.Drawing.Point(195, 3);
+            this.cbPads.Location = new System.Drawing.Point(206, 5);
             this.cbPads.MaxDropDownItems = 50;
             this.cbPads.Name = "cbPads";
-            this.cbPads.Size = new System.Drawing.Size(75, 21);
+            this.cbPads.Size = new System.Drawing.Size(70, 22);
             this.cbPads.TabIndex = 17;
             this.cbPads.TabStop = false;
             this.cbPads.SelectedIndexChanged += new System.EventHandler(this.cbPads_SelectedIndexChanged);
@@ -944,8 +1083,8 @@ namespace Grimoire.UI
             this.menuCharSelect});
             this.darkMenuStrip1.Location = new System.Drawing.Point(0, 0);
             this.darkMenuStrip1.Name = "darkMenuStrip1";
-            this.darkMenuStrip1.Padding = new System.Windows.Forms.Padding(2);
-            this.darkMenuStrip1.Size = new System.Drawing.Size(962, 27);
+            this.darkMenuStrip1.Padding = new System.Windows.Forms.Padding(6, 4, 2, 4);
+            this.darkMenuStrip1.Size = new System.Drawing.Size(962, 32);
             this.darkMenuStrip1.Stretch = false;
             this.darkMenuStrip1.TabIndex = 35;
             this.darkMenuStrip1.Text = "darkMenuStrip1";
@@ -1493,7 +1632,7 @@ namespace Grimoire.UI
             // Root
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.None;
             this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(36)))), ((int)(((byte)(36)))), ((int)(((byte)(46)))));
             this.ClientSize = new System.Drawing.Size(962, 579);
             this.Controls.Add(this.gameContainer);
@@ -2156,6 +2295,17 @@ namespace Grimoire.UI
             ShowForm(CodexBankForm.Instance);
         }
 
+        public void ResetBattle()
+        {
+            if (this.IsDisposed) return;
+            if (this.InvokeRequired && this.IsHandleCreated)
+            {
+                try { this.BeginInvoke(new Action(ResetBattle)); } catch { }
+                return;
+            }
+            btnGetCell_Click(btnGetCell, EventArgs.Empty);
+        }
+
         private void btnGetCell_Click(object sender, EventArgs e)
         {
             if (!Player.IsLoggedIn || World.IsMapLoading) return;
@@ -2205,7 +2355,7 @@ namespace Grimoire.UI
                 this.Icon = global::Properties.Resources.Artix;
                 this.nTray.Icon = global::Properties.Resources.Artix;
                 this.splitContainer1.Visible = false;
-                this.Height -= this.darkMenuStrip1.Height;
+                this.Height -= this.splitContainer1.Height;
             }
             else
             {
@@ -2213,7 +2363,7 @@ namespace Grimoire.UI
                 this.Icon = global::Properties.Resources.GrimoireIcon;
                 this.nTray.Icon = global::Properties.Resources.GrimoireIcon;
                 this.splitContainer1.Visible = true;
-                this.Height += this.darkMenuStrip1.Height;
+                this.Height += this.splitContainer1.Height;
             }
         }
 
@@ -2307,33 +2457,179 @@ public class CustomDarkMenuRenderer : DarkMenuRenderer
 {
     protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
     {
-        using (SolidBrush brush = new SolidBrush(Grimoire.UI.UISkinManager.BaseColor))
+        Color bg = e.ToolStrip.IsDropDown
+            ? (Grimoire.UI.UISkinManager.CodexStyleEnabled
+                ? Grimoire.UI.CodexThemeEngine.GetCardSurfaceColor()
+                : Grimoire.UI.UISkinManager.BaseColor)
+            : Grimoire.UI.UISkinManager.BaseColor;
+
+        using (SolidBrush brush = new SolidBrush(bg))
         {
             e.Graphics.FillRectangle(brush, e.AffectedBounds);
+        }
+
+        // Subtle Codex hairline divider under the top toolbar
+        if (!e.ToolStrip.IsDropDown && Grimoire.UI.UISkinManager.CodexStyleEnabled)
+        {
+            Color divider = Grimoire.UI.CodexThemeEngine.GetSoftBorderColor(0.38f);
+            using (Pen pen = new Pen(divider, 1f))
+            {
+                e.Graphics.DrawLine(pen, 0, e.ToolStrip.Height - 1, e.ToolStrip.Width, e.ToolStrip.Height - 1);
+            }
+        }
+    }
+
+    protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+    {
+        if (e.ToolStrip.IsDropDown)
+        {
+            Color border = Grimoire.UI.UISkinManager.CodexStyleEnabled
+                ? Grimoire.UI.CodexThemeEngine.GetSoftBorderColor(0.60f)
+                : Grimoire.UI.UISkinManager.BorderColor;
+            using (Pen pen = new Pen(border, 1f))
+            {
+                Rectangle r = new Rectangle(0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1);
+                e.Graphics.DrawRectangle(pen, r);
+            }
         }
     }
 
     protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
     {
-        Color color;
-        if (e.Item.Selected)
+        Graphics g = e.Graphics;
+        bool isActive = e.Item.Selected || (e.Item is ToolStripMenuItem mi && mi.DropDown.Visible);
+
+        if (!isActive)
         {
-            color = Grimoire.UI.UISkinManager.HoverColor;
+            return;
         }
-        else if (e.Item is ToolStripMenuItem mi && mi.DropDown.Visible)
+
+        Color fill = Grimoire.UI.UISkinManager.CodexStyleEnabled
+            ? (e.ToolStrip.IsDropDown
+                ? Grimoire.UI.CodexThemeEngine.GetEffectiveAccent()
+                : Grimoire.UI.CodexThemeEngine.Blend(Grimoire.UI.UISkinManager.BaseColor, Grimoire.UI.UISkinManager.HoverColor, 0.78f))
+            : Grimoire.UI.UISkinManager.HoverColor;
+
+        if (Grimoire.UI.UISkinManager.CodexStyleEnabled)
         {
-            color = Grimoire.UI.UISkinManager.HoverColor;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            RectangleF pillRect = e.ToolStrip.IsDropDown
+                ? new RectangleF(4f, 1.5f, Math.Max(4f, e.Item.Width - 8f), Math.Max(4f, e.Item.Height - 3f))
+                : new RectangleF(1.5f, 1.5f, Math.Max(4f, e.Item.Width - 3f), Math.Max(4f, e.Item.Height - 3f));
+
+            using (System.Drawing.Drawing2D.GraphicsPath path = Grimoire.UI.CodexThemeEngine.CreateRoundedRectPath(pillRect, 6f))
+            using (SolidBrush brush = new SolidBrush(fill))
+            {
+                g.FillPath(brush, path);
+            }
         }
         else
         {
-            color = Grimoire.UI.UISkinManager.BaseColor;
+            Rectangle rect = new Rectangle(2, 0, e.Item.Width - 2, e.Item.Height);
+            using (SolidBrush brush = new SolidBrush(fill))
+            {
+                g.FillRectangle(brush, rect);
+            }
+        }
+    }
+
+    protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+    {
+        bool isActive = e.Item.Selected || (e.Item is ToolStripMenuItem mi && mi.DropDown.Visible);
+        if (!e.Item.Enabled)
+        {
+            e.TextColor = Grimoire.UI.UISkinManager.SecondaryTextColor;
+        }
+        else if (Grimoire.UI.UISkinManager.CodexStyleEnabled && isActive && e.ToolStrip.IsDropDown)
+        {
+            e.TextColor = Grimoire.UI.CodexThemeEngine.GetContrastingTextColor(Grimoire.UI.CodexThemeEngine.GetEffectiveAccent());
+        }
+        else if (e.Item.ForeColor == Color.Gold)
+        {
+            e.TextColor = Color.Gold;
+        }
+        else
+        {
+            e.TextColor = Grimoire.UI.UISkinManager.TextColor;
         }
 
-        Rectangle rect = new Rectangle(2, 0, e.Item.Width - 2, e.Item.Height);
+        e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        base.OnRenderItemText(e);
+    }
 
-        using (SolidBrush brush = new SolidBrush(color))
+    protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+    {
+        if (!Grimoire.UI.UISkinManager.CodexStyleEnabled)
         {
-            e.Graphics.FillRectangle(brush, rect);
+            base.OnRenderItemCheck(e);
+            return;
+        }
+
+        Graphics g = e.Graphics;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        Rectangle r = e.ImageRectangle;
+        bool isSelected = e.Item != null && e.Item.Selected;
+        Color checkColor = isSelected
+            ? Grimoire.UI.CodexThemeEngine.GetContrastingTextColor(Grimoire.UI.CodexThemeEngine.GetEffectiveAccent())
+            : Grimoire.UI.CodexThemeEngine.GetEffectiveAccent();
+
+        using (Pen pen = new Pen(checkColor, 1.8f))
+        {
+            pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+            pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+            pen.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
+            float x = r.X + 2f;
+            float y = r.Y + 2f;
+            float w = Math.Max(10f, r.Width - 4f);
+            float h = Math.Max(10f, r.Height - 4f);
+            g.DrawLines(pen, new[]
+            {
+                new PointF(x + w * 0.16f, y + h * 0.52f),
+                new PointF(x + w * 0.42f, y + h * 0.78f),
+                new PointF(x + w * 0.85f, y + h * 0.24f)
+            });
+        }
+    }
+
+    protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
+    {
+        Color line = Grimoire.UI.CodexThemeEngine.GetSoftBorderColor(0.38f);
+        int y = e.Item.Height / 2;
+        using (Pen pen = new Pen(line, 1f))
+        {
+            e.Graphics.DrawLine(pen, 10, y, e.Item.Width - 10, y);
+        }
+    }
+
+    protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
+    {
+        if (!Grimoire.UI.UISkinManager.CodexStyleEnabled)
+        {
+            base.OnRenderArrow(e);
+            return;
+        }
+
+        Graphics g = e.Graphics;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        bool isSelected = e.Item != null && e.Item.Selected;
+        Color arrowColor = isSelected
+            ? Grimoire.UI.CodexThemeEngine.GetContrastingTextColor(Grimoire.UI.CodexThemeEngine.GetEffectiveAccent())
+            : Grimoire.UI.UISkinManager.SecondaryTextColor;
+
+        Rectangle r = e.ArrowRectangle;
+        float cx = r.Left + r.Width / 2f;
+        float cy = r.Top + r.Height / 2f;
+        using (Pen pen = new Pen(arrowColor, 1.5f))
+        {
+            pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+            pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+            pen.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
+            g.DrawLines(pen, new[]
+            {
+                new PointF(cx - 2f, cy - 3.5f),
+                new PointF(cx + 2f, cy),
+                new PointF(cx - 2f, cy + 3.5f)
+            });
         }
     }
 }

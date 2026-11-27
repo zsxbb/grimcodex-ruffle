@@ -192,6 +192,7 @@ namespace Grimoire.UI
             //float fontSize = float.Parse(Config.Load(Application.StartupPath + "\\config.cfg").Get("fontSize") ?? "8.25", System.Globalization.CultureInfo.InvariantCulture.NumberFormat);
             if (font != null)
                 this.Font = new Font(font, 8.25f, FontStyle.Regular, GraphicsUnit.Point, 0);
+            CodexThemeEngine.EnsureFormDpiScaled(this);
             ApplyDpiScaling();
             UISkinManager.ApplyThemeToControl(this);
             try
@@ -203,11 +204,7 @@ namespace Grimoire.UI
 
         public void ApplyDpiScaling(int? commandsSizeOverride = null)
         {
-            float scaleFactor = 1.0f;
-            using (Graphics g = this.CreateGraphics())
-            {
-                scaleFactor = g.DpiY / 96f;
-            }
+            float scaleFactor = CodexThemeEngine.GetDpiScale(this);
 
             Config c = Config.Load(Application.StartupPath + "\\config.cfg");
             string font = c.Get("font");
@@ -216,7 +213,7 @@ namespace Grimoire.UI
             if (baseFontSize < 1f)
                 baseFontSize = 8.25f;
 
-            Font scaledListFont = new Font(font ?? this.Font.FontFamily.Name, baseFontSize, FontStyle.Regular, GraphicsUnit.Point, 0);
+            Font scaledListFont = CodexThemeEngine.GetReadableListFont(font, baseFontSize);
 
             // Apply font to all relevant list boxes
             lstCommands.Font = scaledListFont;
@@ -2729,6 +2726,7 @@ namespace Grimoire.UI
         {
             if (!(e.Index > -1))
                 return;
+            e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
             e.DrawBackground();
             if (!colorfulCommands.Checked)
             {
@@ -2753,7 +2751,7 @@ namespace Grimoire.UI
             SolidBrush eVarColor = new SolidBrush(GetCurrentColor("ExtendedVariable"));
             SolidBrush indexcolor = new SolidBrush(GetCurrentColor("Index"));
             RectangleF region = new RectangleF(e.Bounds.X, e.Bounds.Y + 2, e.Bounds.Width, e.Bounds.Height);
-            Font font = new Font(e.Font.FontFamily, e.Font.Size, FontStyle.Regular);
+            Font font = e.Font;
             StringFormat centered = new StringFormat()
             {
                 Alignment = StringAlignment.Center,

@@ -42,10 +42,10 @@ namespace Grimoire.UI
             // 
             // chkEnableVoice
             // 
-            this.chkEnableVoice.AutoSize = true;
-            this.chkEnableVoice.Location = new System.Drawing.Point(10, 10);
+            this.chkEnableVoice.AutoSize = false;
+            this.chkEnableVoice.Location = new System.Drawing.Point(10, 9);
             this.chkEnableVoice.Name = "chkEnableVoice";
-            this.chkEnableVoice.Size = new System.Drawing.Size(210, 17);
+            this.chkEnableVoice.Size = new System.Drawing.Size(210, 19);
             this.chkEnableVoice.TabIndex = 0;
             this.chkEnableVoice.Text = "Enable Voice Chat";
             this.chkEnableVoice.CheckedChanged += new System.EventHandler(this.chkEnableVoice_CheckedChanged);

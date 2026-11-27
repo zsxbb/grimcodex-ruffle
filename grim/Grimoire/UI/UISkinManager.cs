@@ -13,19 +13,20 @@ namespace Grimoire.UI
 {
     public static class UISkinManager
     {
-        // Default Grimoire DarkUI colors
-        public static readonly Color DefaultBase = Color.FromArgb(36, 36, 46);
-        public static readonly Color DefaultNormal = Color.FromArgb(46, 46, 56);
-        public static readonly Color DefaultHover = Color.FromArgb(90, 90, 100);
-        public static readonly Color DefaultPressed = Color.FromArgb(43, 43, 53);
-        public static readonly Color DefaultBorder = Color.FromArgb(66, 66, 76);
-        public static readonly Color DefaultText = Color.FromArgb(220, 220, 220);
-        public static readonly Color DefaultSecondaryText = Color.FromArgb(160, 160, 170);
+        // Default Codex Dark palette (sleek, comfortable, high contrast)
+        public static readonly Color DefaultBase = Color.FromArgb(28, 28, 30);
+        public static readonly Color DefaultNormal = Color.FromArgb(44, 44, 46);
+        public static readonly Color DefaultHover = Color.FromArgb(58, 58, 62);
+        public static readonly Color DefaultPressed = Color.FromArgb(36, 36, 39);
+        public static readonly Color DefaultBorder = Color.FromArgb(68, 68, 74);
+        public static readonly Color DefaultText = Color.FromArgb(245, 245, 247);
+        public static readonly Color DefaultSecondaryText = Color.FromArgb(152, 152, 157);
+        public static readonly Color DefaultAccent = Color.FromArgb(10, 132, 255); // Codex Blue
 
         // Permanent default dark colors for inner Bot windows/lists
-        public static readonly Color PermanentDarkBackground = Color.FromArgb(36, 36, 46);
-        public static readonly Color PermanentDarkText = Color.Gainsboro;
-        public static readonly Color PermanentDarkPanel = Color.FromArgb(34, 34, 34);
+        public static readonly Color PermanentDarkBackground = Color.FromArgb(22, 22, 26);
+        public static readonly Color PermanentDarkText = Color.FromArgb(238, 238, 242);
+        public static readonly Color PermanentDarkPanel = Color.FromArgb(24, 24, 28);
 
         // Active Colors
         public static Color BaseColor { get; set; } = DefaultBase;
@@ -35,15 +36,25 @@ namespace Grimoire.UI
         public static Color BorderColor { get; set; } = DefaultBorder;
         public static Color TextColor { get; set; } = DefaultText;
         public static Color SecondaryTextColor { get; set; } = DefaultSecondaryText;
+        public static Color AccentColor { get; set; } = DefaultAccent;
+
+        // Style & Typography Settings
+        public static bool CodexStyleEnabled { get; set; } = true;
+        public static string UiFontPreference { get; set; } = "Auto (Codex)";
+
+        private static readonly CustomDarkMenuRenderer SharedMenuRenderer = new CustomDarkMenuRenderer();
 
         private static readonly HashSet<int> KnownBaseArgb = new HashSet<int>
         {
+            Color.FromArgb(28, 28, 30).ToArgb(),
             Color.FromArgb(36, 36, 46).ToArgb(),
             Color.FromArgb(34, 34, 34).ToArgb(),
             Color.FromArgb(30, 30, 30).ToArgb(),
             Color.FromArgb(36, 36, 36).ToArgb(),
             Color.FromArgb(43, 43, 53).ToArgb(),
-            Color.FromArgb(46, 46, 56).ToArgb()
+            Color.FromArgb(46, 46, 56).ToArgb(),
+            Color.FromArgb(28, 28, 38).ToArgb(),
+            Color.FromArgb(242, 242, 247).ToArgb()
         };
 
         public static string ConfigPath => Path.Combine(Application.StartupPath, "config.cfg");
@@ -61,13 +72,45 @@ namespace Grimoire.UI
                 TextColor = ParseColor(c.Get("BtnTextColor"), DefaultText);
                 SecondaryTextColor = ParseColor(c.Get("BtnSecondaryTextColor"), DefaultSecondaryText);
 
+                string savedAccent = c.Get("BtnAccentColor");
+                if (!string.IsNullOrWhiteSpace(savedAccent))
+                {
+                    AccentColor = ParseColor(savedAccent, DefaultAccent);
+                }
+                else
+                {
+                    AccentColor = DeriveSmartAccent(BaseColor, HoverColor, BorderColor);
+                }
+
+                string codexStyleFlag = c.Get("CodexStyleEnabled");
+                CodexStyleEnabled = string.IsNullOrWhiteSpace(codexStyleFlag) || !codexStyleFlag.Equals("false", StringComparison.OrdinalIgnoreCase);
+
+                string fontPref = c.Get("UiFontName");
+                UiFontPreference = string.IsNullOrWhiteSpace(fontPref) ? "Auto (Codex)" : fontPref;
+                CodexThemeEngine.FontPreference = UiFontPreference;
+
                 KnownBaseArgb.Add(BaseColor.ToArgb());
                 ApplyColorsToDarkUI();
             }
             catch { }
         }
 
-        public static void Apply(Color baseColor, Color normal, Color hover, Color pressed, Color border, Color text, Color secondaryText, bool refreshUi = true)
+        public static Color DeriveSmartAccent(Color baseCol, Color hoverCol, Color borderCol)
+        {
+            // If user customized a vivid theme (e.g. Sakura Pink or Violet), inherit its vibrant hue as accent
+            if (GetSaturation(hoverCol) > 0.35f) return hoverCol;
+            if (GetSaturation(borderCol) > 0.35f) return borderCol;
+            return CodexThemeEngine.IsDarkColor(baseCol)
+                ? Color.FromArgb(10, 132, 255)   // Codex Dark Blue
+                : Color.FromArgb(0, 122, 255);   // Codex Light Blue
+        }
+
+        private static float GetSaturation(Color c)
+        {
+            return c.GetSaturation();
+        }
+
+        public static void Apply(Color baseColor, Color normal, Color hover, Color pressed, Color border, Color text, Color secondaryText, Color accent, bool refreshUi = true)
         {
             BaseColor = baseColor;
             NormalColor = normal;
@@ -76,6 +119,7 @@ namespace Grimoire.UI
             BorderColor = border;
             TextColor = text;
             SecondaryTextColor = secondaryText;
+            AccentColor = accent;
 
             KnownBaseArgb.Add(baseColor.ToArgb());
             ApplyColorsToDarkUI();
@@ -86,16 +130,27 @@ namespace Grimoire.UI
             }
         }
 
-        public static void Apply(Color baseColor, Color normal, Color hover, Color pressed, Color border, Color text, bool refreshUi = true)
+        public static void Apply(Color baseColor, Color normal, Color hover, Color pressed, Color border, Color text, Color secondaryText, bool refreshUi = true)
         {
-            Apply(baseColor, normal, hover, pressed, border, text, SecondaryTextColor, refreshUi);
+            Apply(baseColor, normal, hover, pressed, border, text, secondaryText, AccentColor, refreshUi);
         }
 
-        public static void Save(Color baseColor, Color normal, Color hover, Color pressed, Color border, Color text, Color secondaryText)
+        public static void Apply(Color baseColor, Color normal, Color hover, Color pressed, Color border, Color text, bool refreshUi = true)
+        {
+            Apply(baseColor, normal, hover, pressed, border, text, SecondaryTextColor, AccentColor, refreshUi);
+        }
+
+        public static void Save(Color baseColor, Color normal, Color hover, Color pressed, Color border, Color text, Color secondaryText, Color accent, string fontPreference = null)
         {
             try
             {
-                Apply(baseColor, normal, hover, pressed, border, text, secondaryText, true);
+                if (!string.IsNullOrWhiteSpace(fontPreference))
+                {
+                    UiFontPreference = fontPreference;
+                    CodexThemeEngine.FontPreference = fontPreference;
+                }
+
+                Apply(baseColor, normal, hover, pressed, border, text, secondaryText, accent, true);
 
                 Config c = Config.Load(ConfigPath);
                 c.Set("BtnBaseColor", baseColor.ToArgb().ToString("X8"));
@@ -105,19 +160,30 @@ namespace Grimoire.UI
                 c.Set("BtnBorderColor", border.ToArgb().ToString("X8"));
                 c.Set("BtnTextColor", text.ToArgb().ToString("X8"));
                 c.Set("BtnSecondaryTextColor", secondaryText.ToArgb().ToString("X8"));
+                c.Set("BtnAccentColor", accent.ToArgb().ToString("X8"));
+                c.Set("CodexStyleEnabled", CodexStyleEnabled ? "true" : "false");
+                c.Set("UiFontName", UiFontPreference);
                 c.Save();
             }
             catch { }
         }
 
+        public static void Save(Color baseColor, Color normal, Color hover, Color pressed, Color border, Color text, Color secondaryText)
+        {
+            Save(baseColor, normal, hover, pressed, border, text, secondaryText, AccentColor, UiFontPreference);
+        }
+
         public static void Save(Color baseColor, Color normal, Color hover, Color pressed, Color border, Color text)
         {
-            Save(baseColor, normal, hover, pressed, border, text, SecondaryTextColor);
+            Save(baseColor, normal, hover, pressed, border, text, SecondaryTextColor, AccentColor, UiFontPreference);
         }
 
         public static void ResetToDefault()
         {
-            Save(DefaultBase, DefaultNormal, DefaultHover, DefaultPressed, DefaultBorder, DefaultText, DefaultSecondaryText);
+            CodexStyleEnabled = true;
+            UiFontPreference = "Auto (Codex)";
+            CodexThemeEngine.FontPreference = UiFontPreference;
+            Save(DefaultBase, DefaultNormal, DefaultHover, DefaultPressed, DefaultBorder, DefaultText, DefaultSecondaryText, DefaultAccent, UiFontPreference);
         }
 
         private static void ApplyColorsToDarkUI()
@@ -132,13 +198,13 @@ namespace Grimoire.UI
             SetColorField("DarkGreySelection", BorderColor);
             SetColorField("LightBorder", BorderColor);
             SetColorField("DarkBorder", BorderColor);
-            SetColorField("DarkBlueBorder", BorderColor);
-            SetColorField("LightBlueBorder", BorderColor);
+            SetColorField("DarkBlueBorder", AccentColor);
+            SetColorField("LightBlueBorder", AccentColor);
             SetColorField("LightText", TextColor);
             SetColorField("DisabledText", SecondaryTextColor);
             SetColorField("GreyHighlight", HoverColor);
-            SetColorField("BlueHighlight", HoverColor);
-            SetColorField("BlueSelection", HoverColor);
+            SetColorField("BlueHighlight", AccentColor);
+            SetColorField("BlueSelection", AccentColor);
         }
 
         private static void SetColorField(string propertyName, Color color)
@@ -164,12 +230,22 @@ namespace Grimoire.UI
             {
                 foreach (Form form in Application.OpenForms.Cast<Form>().ToList())
                 {
-                    ApplyThemeToControl(form);
+                    if (form == null || form.IsDisposed) continue;
+                    form.SuspendLayout();
+                    try
+                    {
+                        ApplyThemeToControl(form);
+                    }
+                    finally
+                    {
+                        form.ResumeLayout(false);
+                    }
                     form.Invalidate(true);
                 }
 
                 if (Root.Instance != null && !Root.Instance.IsDisposed)
                 {
+                    Root.Instance.LayoutToolbarControls();
                     Root.Instance.SetUpdateNotification(Root.Instance.IsAppUpdateAvailable);
                 }
             }
@@ -178,11 +254,22 @@ namespace Grimoire.UI
 
         public static void ApplyThemeToControl(Control ctrl)
         {
-            if (ctrl == null) return;
+            if (ctrl == null || ctrl.IsDisposed) return;
+
+            Form ownerForm = ctrl as Form ?? ctrl.FindForm();
+            bool isDenseForm = ownerForm is BotManager || (ownerForm != null && ownerForm.GetType().Name == "BotManager");
+
+            ApplyThemeInternal(ctrl, isDenseForm);
+        }
+
+        private static void ApplyThemeInternal(Control ctrl, bool isDenseForm)
+        {
+            if (ctrl == null || ctrl.IsDisposed) return;
 
             if (ctrl.Name == "pnlMaterials" || ctrl.Name == "gbMaterials" ||
                 (ctrl.Parent != null && (ctrl.Parent.Name == "pnlMaterials" || ctrl.Parent.Name == "gbMaterials")))
             {
+                CodexThemeEngine.ApplyCodexFont(ctrl, isDenseForm);
                 if (ctrl is Panel pnl)
                 {
                     pnl.BackColor = Color.FromArgb(30, 30, 36);
@@ -205,9 +292,28 @@ namespace Grimoire.UI
                 return;
             }
 
+            // Scale AutoScaleMode.None forms cleanly to native monitor DPI before swapping font
+            if (ctrl is Form targetForm)
+            {
+                CodexThemeEngine.EnsureFormDpiScaled(targetForm);
+            }
+
+            // Apply Codex typography first (safely locking AutoScaleMode on forms)
+            // Keep crisp readable GDI+ font for owner-drawn bot lists (lstCommands, etc.)
+            if (!(ctrl is ListBox && IsPermanentDarkBotControl(ctrl)))
+            {
+                CodexThemeEngine.ApplyCodexFont(ctrl, isDenseForm);
+            }
+
             if (ctrl is Form f)
             {
                 f.BackColor = BaseColor;
+                f.ForeColor = TextColor;
+                CodexThemeEngine.ApplyWindowChrome(f);
+                if (f.ContextMenuStrip != null)
+                {
+                    ApplyThemeToContextMenu(f.ContextMenuStrip);
+                }
             }
             else if (ctrl is ThemedTabControl ttc)
             {
@@ -243,26 +349,23 @@ namespace Grimoire.UI
             {
                 ms.BackColor = BaseColor;
                 ms.ForeColor = TextColor;
+                ms.Renderer = SharedMenuRenderer;
                 foreach (ToolStripItem item in ms.Items)
                 {
+                    item.Padding = new Padding(3, 1, 3, 1);
                     ApplyThemeToMenuItem(item);
                 }
                 ms.Invalidate();
             }
             else if (ctrl is ContextMenuStrip cms)
             {
-                cms.BackColor = BaseColor;
-                cms.ForeColor = TextColor;
-                foreach (ToolStripItem item in cms.Items)
-                {
-                    ApplyThemeToMenuItem(item);
-                }
-                cms.Invalidate();
+                ApplyThemeToContextMenu(cms);
             }
             else if (ctrl is ToolStrip ts)
             {
                 ts.BackColor = BaseColor;
                 ts.ForeColor = TextColor;
+                ts.Renderer = SharedMenuRenderer;
                 foreach (ToolStripItem item in ts.Items)
                 {
                     ApplyThemeToMenuItem(item);
@@ -271,16 +374,28 @@ namespace Grimoire.UI
             }
             else if (ctrl is DarkGroupBox gb)
             {
-                gb.BackColor = BaseColor;
+                gb.BackColor = CodexStyleEnabled ? CodexThemeEngine.GetCardSurfaceColor() : BaseColor;
                 gb.BorderColor = BorderColor;
                 gb.ForeColor = TextColor;
                 gb.Invalidate();
+            }
+            else if (ctrl is GroupBox sgb)
+            {
+                sgb.BackColor = CodexStyleEnabled ? CodexThemeEngine.GetCardSurfaceColor() : BaseColor;
+                sgb.ForeColor = TextColor;
+                sgb.Invalidate();
             }
             else if (ctrl is DarkTextBox dtb)
             {
                 dtb.BackColor = NormalColor;
                 dtb.ForeColor = TextColor;
                 dtb.Invalidate();
+            }
+            else if (ctrl is TextBox tb)
+            {
+                tb.BackColor = NormalColor;
+                tb.ForeColor = TextColor;
+                tb.Invalidate();
             }
             else if (ctrl is DarkComboBox dcb)
             {
@@ -289,6 +404,12 @@ namespace Grimoire.UI
                 dcb.BorderColor = BorderColor;
                 dcb.ButtonColor = NormalColor;
                 dcb.Invalidate();
+            }
+            else if (ctrl is ComboBox cbStd)
+            {
+                cbStd.BackColor = NormalColor;
+                cbStd.ForeColor = TextColor;
+                cbStd.Invalidate();
             }
             else if (ctrl is DarkNumericUpDown nud)
             {
@@ -301,39 +422,75 @@ namespace Grimoire.UI
                 btn.ForeColor = TextColor;
                 btn.Invalidate();
             }
+            else if (ctrl is Button sbtn)
+            {
+                if (sbtn.Name != "btnMin" && sbtn.Name != "btnMax" && sbtn.Name != "btnExit")
+                {
+                    sbtn.BackColor = NormalColor;
+                    sbtn.ForeColor = TextColor;
+                    sbtn.Invalidate();
+                }
+            }
             else if (ctrl is DarkCheckBox dcb2)
             {
                 if (dcb2.BackColor != Color.Transparent)
-                    dcb2.BackColor = BaseColor;
+                    dcb2.BackColor = CodexThemeEngine.GetParentSurfaceColor(dcb2);
                 dcb2.ForeColor = TextColor;
                 dcb2.Invalidate();
             }
             else if (ctrl is DarkRadioButton drb)
             {
                 if (drb.BackColor != Color.Transparent)
-                    drb.BackColor = BaseColor;
+                    drb.BackColor = CodexThemeEngine.GetParentSurfaceColor(drb);
                 drb.ForeColor = TextColor;
                 drb.Invalidate();
             }
             else if (ctrl is DarkLabel dl)
             {
-                dl.ForeColor = TextColor;
+                if (dl.Name == "lblPreviewSecondary" || dl.Name.EndsWith("Hex", StringComparison.Ordinal))
+                {
+                    dl.ForeColor = SecondaryTextColor;
+                }
+                else
+                {
+                    dl.ForeColor = TextColor;
+                }
+                if (dl.Parent is DarkGroupBox || dl.Parent is GroupBox || (dl.Parent != null && dl.Parent.Name == "pnlColors"))
+                {
+                    dl.BackColor = Color.Transparent;
+                }
             }
             else if (ctrl is CheckBox cb)
             {
-                if (IsBaseColor(cb.BackColor)) cb.BackColor = BaseColor;
+                if (IsBaseColor(cb.BackColor) || cb.Parent is GroupBox)
+                    cb.BackColor = CodexThemeEngine.GetParentSurfaceColor(cb);
                 cb.ForeColor = TextColor;
                 cb.Invalidate();
             }
             else if (ctrl is RadioButton rb)
             {
-                if (IsBaseColor(rb.BackColor)) rb.BackColor = BaseColor;
+                if (IsBaseColor(rb.BackColor) || rb.Parent is GroupBox)
+                    rb.BackColor = CodexThemeEngine.GetParentSurfaceColor(rb);
                 rb.ForeColor = TextColor;
                 rb.Invalidate();
             }
             else if (ctrl is Label lbl)
             {
                 lbl.ForeColor = TextColor;
+                if (lbl.Parent is DarkGroupBox || lbl.Parent is GroupBox)
+                {
+                    lbl.BackColor = Color.Transparent;
+                }
+            }
+            else if (ctrl is TrackBar trackBar)
+            {
+                trackBar.BackColor = CodexThemeEngine.GetParentSurfaceColor(trackBar);
+                trackBar.Invalidate();
+            }
+            else if (ctrl is ProgressBar progressBar)
+            {
+                progressBar.BackColor = CodexThemeEngine.GetParentSurfaceColor(progressBar);
+                progressBar.Invalidate();
             }
             else if (ctrl is ListBox lb)
             {
@@ -344,9 +501,11 @@ namespace Grimoire.UI
                 }
                 else
                 {
-                    if (IsBaseColor(lb.BackColor))
+                    if (IsBaseColor(lb.BackColor) || lb.Parent is GroupBox)
                     {
-                        lb.BackColor = BaseColor;
+                        lb.BackColor = CodexStyleEnabled && lb.Parent is GroupBox
+                            ? CodexThemeEngine.GetCardSurfaceColor()
+                            : BaseColor;
                     }
                     lb.ForeColor = TextColor;
                 }
@@ -405,6 +564,12 @@ namespace Grimoire.UI
                     rtb.ForeColor = TextColor;
                 }
             }
+            else if (ctrl is ListView lv)
+            {
+                if (IsBaseColor(lv.BackColor)) lv.BackColor = BaseColor;
+                lv.ForeColor = TextColor;
+                lv.Invalidate();
+            }
             else if (ctrl is SplitContainer sc)
             {
                 sc.BackColor = BaseColor;
@@ -415,12 +580,17 @@ namespace Grimoire.UI
             {
                 if (IsPermanentDarkBotPanel(p))
                 {
-                    p.BackColor = PermanentDarkPanel;
+                    p.BackColor = CodexStyleEnabled ? BaseColor : PermanentDarkPanel;
                 }
-                // Do not color preview panels in UISkinForm
+                else if (p.Name == "pnlColors")
+                {
+                    p.BackColor = CodexStyleEnabled ? CodexThemeEngine.GetCardSurfaceColor() : BaseColor;
+                    p.Invalidate();
+                }
+                // Do not color preview swatch panels in UISkinForm
                 else if (p.Name != "pnlBase" && p.Name != "pnlNormal" && p.Name != "pnlHover" &&
                     p.Name != "pnlPressed" && p.Name != "pnlBorder" && p.Name != "pnlText" &&
-                    p.Name != "pnlSecondaryText")
+                    p.Name != "pnlSecondaryText" && p.Name != "pnlAccent" && p.Name != "gameContainer")
                 {
                     if (p.Name == "pnlMenuControls" || IsBaseColor(p.BackColor))
                     {
@@ -429,10 +599,31 @@ namespace Grimoire.UI
                 }
             }
 
+            if (ctrl.ContextMenuStrip != null)
+            {
+                ApplyThemeToContextMenu(ctrl.ContextMenuStrip);
+            }
+
+            // Attach lightweight Codex custom painter hook to interactive controls
+            CodexThemeEngine.AttachControlStyler(ctrl);
+
             foreach (Control child in ctrl.Controls)
             {
-                ApplyThemeToControl(child);
+                ApplyThemeInternal(child, isDenseForm);
             }
+        }
+
+        private static void ApplyThemeToContextMenu(ContextMenuStrip cms)
+        {
+            if (cms == null || cms.IsDisposed) return;
+            cms.BackColor = BaseColor;
+            cms.ForeColor = TextColor;
+            cms.Renderer = SharedMenuRenderer;
+            foreach (ToolStripItem item in cms.Items)
+            {
+                ApplyThemeToMenuItem(item);
+            }
+            cms.Invalidate();
         }
 
         public static void ApplyThemeToMenuItem(ToolStripItem item)
@@ -440,8 +631,16 @@ namespace Grimoire.UI
             if (item == null) return;
             item.BackColor = BaseColor;
             item.ForeColor = TextColor;
+            CodexThemeEngine.ApplyCodexFontToMenuItem(item);
+
             if (item is ToolStripMenuItem mi)
             {
+                if (mi.DropDown != null)
+                {
+                    mi.DropDown.BackColor = BaseColor;
+                    mi.DropDown.ForeColor = TextColor;
+                    mi.DropDown.Renderer = SharedMenuRenderer;
+                }
                 foreach (ToolStripItem sub in mi.DropDownItems)
                 {
                     ApplyThemeToMenuItem(sub);

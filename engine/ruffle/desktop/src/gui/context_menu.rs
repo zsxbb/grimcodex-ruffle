@@ -1,5 +1,7 @@
 use crate::custom_event::RuffleEvent;
-use crate::grimcodex::{FpsLimit, Graphics, MenuSettings, Performance, Setting};
+use crate::grimcodex::{
+    FpsLimit, Graphics, MenuSettings, SCALE_MAX_PERCENT, SCALE_MIN_PERCENT, Setting,
+};
 use egui::{
     Align, Align2, Area, Button, Checkbox, Color32, CornerRadius, FontId, Frame, Id, Key,
     KeyboardShortcut, Layout, Margin, Modifiers, Order, Painter, Pos2, Rect, Response, Sense,
@@ -115,6 +117,7 @@ impl ContextMenu {
         if self.position.is_none() {
             egui_ctx.data_mut(|data| {
                 data.remove::<bool>(Id::new(("ios_mem_limit_open", MENU_ID)));
+                data.remove::<String>(Id::new(("ios_scale_input", format!("scale_{MENU_ID}"))));
             });
         }
         self.position = self.position.or(egui_ctx.pointer_latest_pos());
@@ -204,7 +207,12 @@ impl ContextMenu {
         for setting in changes {
             if let Some(shown) = &mut self.settings {
                 match setting {
-                    Setting::Performance(level) => shown.performance = level,
+                    Setting::Performance(level) => {
+                        shown.performance = level;
+                        shown.render_scale_percent = level.percent();
+                    }
+                    Setting::RenderScale(percent) => shown.render_scale_percent = percent,
+                    Setting::Graphics(choice) => shown.graphics = choice,
                     Setting::Interpolation(on) => shown.interpolation = on,
                     Setting::Uncapped(on) => shown.uncapped = on,
                     Setting::FpsLimit(limit) => shown.fps_limit = limit,
@@ -270,13 +278,6 @@ fn graphics_options() -> (&'static [&'static str], &'static [Option<Graphics>]) 
     );
 }
 
-fn performance_options() -> (&'static [&'static str], &'static [Performance]) {
-    (
-        &["100%", "85%", "70%"],
-        &[Performance::Off, Performance::Balanced, Performance::Fast],
-    )
-}
-
 /// Renders the iOS Control Center Bento layout.
 pub(crate) fn settings_rows(
     ui: &mut Ui,
@@ -285,7 +286,7 @@ pub(crate) fn settings_rows(
     id: &str,
     changes: &mut Vec<Setting>,
 ) -> bool {
-    let mut close_menu = false;
+    let close_menu = false;
     let gap = 8.0 * z;
     let platter_r = CornerRadius::same((12.0 * z) as u8);
 
@@ -337,21 +338,14 @@ pub(crate) fn settings_rows(
             ui.set_width(inner_w);
             ui.spacing_mut().item_spacing = vec2(0.0, 4.0 * z);
 
-            let (perf_opts, perf_vals) = performance_options();
-            let perf_idx = perf_vals
-                .iter()
-                .position(|&v| v == settings.performance)
-                .unwrap_or(0);
-            if let Some(picked) = ios_segmented_row(
+            if let Some(pct) = ios_scale_row(
                 ui,
                 z,
                 inner_w,
-                &format!("perf_{id}"),
-                "Scale",
-                perf_opts,
-                perf_idx,
+                &format!("scale_{id}"),
+                settings.render_scale_percent,
             ) {
-                changes.push(Setting::Performance(perf_vals[picked]));
+                changes.push(Setting::RenderScale(pct));
             }
 
             if settings.graphics_choice {
@@ -371,7 +365,6 @@ pub(crate) fn settings_rows(
                     gfx_idx,
                 ) {
                     changes.push(Setting::Graphics(gfx_vals[picked]));
-                    close_menu = true;
                 }
             }
 
@@ -608,6 +601,183 @@ fn inset_hairline(ui: &mut Ui, z: f32, width: f32) {
         rect.center().y,
         Stroke::new(1.0, EDGE),
     );
+}
+
+fn ios_scale_row(
+    ui: &mut Ui,
+    z: f32,
+    width: f32,
+    id: &str,
+    current_percent: u8,
+) -> Option<u8> {
+    let (row, _) = ui.allocate_exact_size(vec2(width, 28.0 * z), Sense::hover());
+    ui.painter().text(
+        pos2(row.left() + 2.0 * z, row.center().y),
+        Align2::LEFT_CENTER,
+        "Scale",
+        FontId::proportional(13.0 * z),
+        TEXT,
+    );
+
+    let ctrl_w = 178.0 * z;
+    let rect = Rect::from_min_max(
+        pos2(row.right() - ctrl_w, row.top() + 1.5 * z),
+        pos2(row.right(), row.bottom() - 1.5 * z),
+    );
+    let radius = CornerRadius::same((7.0 * z) as u8);
+    let thumb_r = CornerRadius::same((5.5 * z) as u8);
+    ui.painter().rect_filled(rect, radius, TRACK);
+
+    let step_w = 42.0 * z;
+    let minus_rect = Rect::from_min_size(rect.left_top(), vec2(step_w, rect.height()));
+    let plus_rect = Rect::from_min_size(
+        pos2(rect.right() - step_w, rect.top()),
+        vec2(step_w, rect.height()),
+    );
+    let center_rect = Rect::from_min_max(
+        pos2(minus_rect.right(), rect.top()),
+        pos2(plus_rect.left(), rect.bottom()),
+    );
+
+    let can_dec = current_percent > SCALE_MIN_PERCENT;
+    let can_inc = current_percent < SCALE_MAX_PERCENT;
+
+    let minus_resp = ui.interact(minus_rect, Id::new((id, "minus")), Sense::click());
+    let plus_resp = ui.interact(plus_rect, Id::new((id, "plus")), Sense::click());
+
+    if (minus_resp.hovered() && can_dec) || (plus_resp.hovered() && can_inc) {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+
+    // Hairline separators for − | 95% | +
+    let div_y = (rect.top() + 5.0 * z)..=(rect.bottom() - 5.0 * z);
+    ui.painter()
+        .vline(minus_rect.right(), div_y.clone(), Stroke::new(1.0, EDGE));
+    ui.painter()
+        .vline(plus_rect.left(), div_y, Stroke::new(1.0, EDGE));
+
+    if minus_resp.hovered() && can_dec {
+        ui.painter().rect_filled(
+            minus_rect.shrink(2.0 * z),
+            thumb_r,
+            Color32::from_rgba_premultiplied(255, 255, 255, 16),
+        );
+    }
+    if plus_resp.hovered() && can_inc {
+        ui.painter().rect_filled(
+            plus_rect.shrink(2.0 * z),
+            thumb_r,
+            Color32::from_rgba_premultiplied(255, 255, 255, 16),
+        );
+    }
+
+    // Vector − and + glyphs
+    let minus_col = if can_dec {
+        TEXT
+    } else {
+        Color32::from_rgb(82, 82, 88)
+    };
+    let plus_col = if can_inc {
+        TEXT
+    } else {
+        Color32::from_rgb(82, 82, 88)
+    };
+    let glyph_half = 4.0 * z;
+    ui.painter().line_segment(
+        [
+            minus_rect.center() + vec2(-glyph_half, 0.0),
+            minus_rect.center() + vec2(glyph_half, 0.0),
+        ],
+        Stroke::new(1.5 * z, minus_col),
+    );
+    ui.painter().line_segment(
+        [
+            plus_rect.center() + vec2(-glyph_half, 0.0),
+            plus_rect.center() + vec2(glyph_half, 0.0),
+        ],
+        Stroke::new(1.5 * z, plus_col),
+    );
+    ui.painter().line_segment(
+        [
+            plus_rect.center() + vec2(0.0, -glyph_half),
+            plus_rect.center() + vec2(0.0, glyph_half),
+        ],
+        Stroke::new(1.5 * z, plus_col),
+    );
+
+    // Center editable percentage inside the segmented pill
+    let key = Id::new(("ios_scale_input", id.to_owned()));
+    let mut text = ui
+        .data(|data| data.get_temp::<String>(key))
+        .unwrap_or_else(|| current_percent.to_string());
+
+    let edit_h = 16.0 * z;
+    let edit_top = center_rect.center().y - edit_h * 0.5 + 0.5 * z;
+    let edit_rect = Rect::from_min_size(
+        pos2(center_rect.left() + 14.0 * z, edit_top),
+        vec2(center_rect.width() - 36.0 * z, edit_h),
+    );
+    let response = ui.put(
+        edit_rect,
+        egui::TextEdit::singleline(&mut text)
+            .frame(Frame::NONE)
+            .char_limit(3)
+            .font(FontId::proportional(12.0 * z))
+            .horizontal_align(Align::Center),
+    );
+
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            center_rect.shrink(1.5 * z),
+            thumb_r,
+            Stroke::new(1.0, ACCENT),
+            StrokeKind::Inside,
+        );
+    }
+
+    ui.painter().text(
+        pos2(center_rect.right() - 15.0 * z, center_rect.center().y),
+        Align2::RIGHT_CENTER,
+        "%",
+        FontId::proportional(12.0 * z),
+        MUTED,
+    );
+
+    text.retain(|c| c.is_ascii_digit());
+
+    let mut applied = None;
+    if minus_resp.clicked() && can_dec {
+        let next = current_percent.saturating_sub(1).max(SCALE_MIN_PERCENT);
+        applied = Some(next);
+        ui.data_mut(|data| data.insert_temp(key, next.to_string()));
+    } else if plus_resp.clicked() && can_inc {
+        let next = current_percent.saturating_add(1).min(SCALE_MAX_PERCENT);
+        applied = Some(next);
+        ui.data_mut(|data| data.insert_temp(key, next.to_string()));
+    } else {
+        let enter_pressed = response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+        let escaped = ui.input(|i| i.key_pressed(Key::Escape));
+        if enter_pressed || (response.lost_focus() && !escaped) {
+            if let Some(clamped) = text
+                .parse::<u16>()
+                .ok()
+                .map(|v| (v.min(255) as u8).clamp(SCALE_MIN_PERCENT, SCALE_MAX_PERCENT))
+            {
+                if clamped != current_percent {
+                    applied = Some(clamped);
+                }
+                ui.data_mut(|data| data.insert_temp(key, clamped.to_string()));
+            } else {
+                ui.data_mut(|data| data.remove::<String>(key));
+            }
+        } else if response.has_focus() || response.changed() {
+            ui.data_mut(|data| data.insert_temp(key, text));
+        } else {
+            ui.data_mut(|data| data.remove::<String>(key));
+        }
+    }
+
+    applied
 }
 
 fn ios_segmented_row(

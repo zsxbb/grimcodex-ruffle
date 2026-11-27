@@ -5,20 +5,53 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace Grimoire
 {
 	internal static class Program
 	{
-		public static readonly string Version = "v1.0.2";
-		public static readonly string ReleaseDate = "26-11-2026";
+		public static readonly string Version = "v1.1.0";
+		public static readonly string ReleaseDate = "27-11-2026";
 		public static string PluginsPath { get; private set; }
 		public static Tools.Plugins.PluginManager PluginsManager { get; private set; }
+
+		[DllImport("user32.dll")]
+		private static extern bool SetProcessDpiAwarenessContext(IntPtr dpiContext);
+
+		[DllImport("shcore.dll")]
+		private static extern int SetProcessDpiAwareness(int awareness);
+
+		[DllImport("user32.dll")]
+		private static extern bool SetProcessDPIAware();
+
+		private static void EnableHighDpiAwareness()
+		{
+			try
+			{
+				if (SetProcessDpiAwarenessContext(new IntPtr(-4)))
+					return;
+			}
+			catch { }
+			try
+			{
+				if (SetProcessDpiAwareness(2) == 0)
+					return;
+			}
+			catch { }
+			try
+			{
+				SetProcessDPIAware();
+			}
+			catch { }
+		}
 
 		[STAThread]
 		private static void Main()
 		{
+			EnableHighDpiAwareness();
+
 			Newtonsoft.Json.JsonConvert.DefaultSettings = () => new Newtonsoft.Json.JsonSerializerSettings
 			{
 				SerializationBinder = Tools.GrimoireSerializationBinder.Instance

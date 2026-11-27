@@ -296,6 +296,7 @@
       <DependentUpon>UISkinForm.cs</DependentUpon>
     </Compile>
     <Compile Include="Grimoire\UI\UISkinManager.cs" />
+    <Compile Include="Grimoire\UI\CodexThemeEngine.cs" />
     <Compile Include="Grimoire\UI\ThemedTabControl.cs" />
     <Compile Include="Grimoire\UI\GrimDarkForm.cs" />
     <Compile Include="Grimoire\Tools\CodexBankManager.cs" />

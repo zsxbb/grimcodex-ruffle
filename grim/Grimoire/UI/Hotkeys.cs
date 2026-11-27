@@ -120,7 +120,7 @@ namespace Grimoire.UI
 			},
             delegate
             {
-				//execute debug
+				Root.Instance.ResetBattle();
 			}
         };
 
@@ -414,7 +414,8 @@ namespace Grimoire.UI
             "Toggle Options",
             "Show DropUi",
             "Show Swf Dev test",
-            "Start/Stop AutoAttack"});
+            "Start/Stop AutoAttack",
+            "Reset Battle"});
             this.cbActions.Location = new System.Drawing.Point(124, 12);
             this.cbActions.MaxDropDownItems = 20;
             this.cbActions.Name = "cbActions";
