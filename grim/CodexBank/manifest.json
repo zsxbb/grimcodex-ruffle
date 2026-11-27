@@ -1,9 +1,9 @@
 {
-  "app_version":  "1.1.0",
+  "app_version": "1.1.0",
   "app_download_url": "https://github.com/zsxbb/grimcodex-ruffle/releases/latest/download/GrimCodex.Ruffle.exe",
   "app_release_url": "https://github.com/zsxbb/grimcodex-ruffle/releases/latest",
   "engine_download_url": "https://github.com/zsxbb/grimcodex-ruffle/releases/latest/download/grimcodex-engine.zip",
-  "engine_sha256": "A0889406DF59C5FD9375F43CAB58C797DB2A79FCB38D4EC82ECC418CB8BA5783",
+  "engine_sha256": "2C18C50991D7ED41D93B88C8C89F25D3AF8C3A6ED8D206BBD209779F48A2A26D",
   "changelog": "GrimCodex Ruffle v1.1.0\n- Security Update\n- Performance Update\n- New UI Theme\n- Ruffle Setting: Render Customizer",
   "scripts": [
     {
